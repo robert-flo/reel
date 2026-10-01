@@ -127,6 +127,9 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Inhibición de suspensión durante descargas activas**: prevención automática de reposo del
   sistema mediante `systemd-inhibit` mientras haya descargas activas en curso, configurable en
   los ajustes para evitar que la máquina se duerma a mitad de una descarga grande.
+- **Exportación masiva de enlaces (`copiar enlaces`)**: botón en la cabecera cuando hay múltiples
+  elementos en la cola para copiar al portapapeles todas las URLs (separadas por saltos de línea),
+  permitiendo exportar o compartir rápidamente la lista de reproducción o cola de trabajo.
 
 ### Falta
 

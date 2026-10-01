@@ -152,6 +152,8 @@ i18n_strings! {
     redownload: { en: "download again", es: "volver a bajar" }
     copy_path: { en: "copy path", es: "copiar ruta" }
     copy_url: { en: "copy link", es: "copiar enlace" }
+    copy_all_links: { en: "copy links", es: "copiar enlaces" }
+    copy_all_links_tip: { en: "copy all queue URLs to clipboard (separated by lines)", es: "copia todas las URLs de la cola al portapapeles (separadas por línea)" }
     folder: { en: "folder", es: "carpeta" }
     open: { en: "open", es: "abrir" }
     open_folder: { en: "open folder", es: "abrir carpeta" }

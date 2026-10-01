@@ -979,6 +979,23 @@ impl App {
         count
     }
 
+    /// Devuelve las URLs no vacias de todos los trabajos en cola,
+    /// separadas por saltos de linea para exportar o copiar al portapapeles.
+    pub fn queue_urls_text(&self) -> String {
+        let queue = self
+            .backend
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue
+            .jobs
+            .iter()
+            .map(|job| job.url.as_str())
+            .filter(|url| !url.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
         // egui entrega el portapapeles por eventos; en Wayland tambien vale
         // `wl-paste`. Un solo lugar que cambiar cuando se decida cual.
@@ -1797,5 +1814,35 @@ mod tests {
         // set_active false no hace nada si ya esta apagado
         inhibitor.set_active(false);
         assert!(!inhibitor.is_active());
+    }
+
+    #[test]
+    fn queue_urls_text_recupera_todas_las_urls() {
+        let waker = fastframe_shell::Waker::default();
+        let app = App::new(&waker);
+
+        {
+            let mut queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue.push_ready(
+                "https://test.com/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            queue.push_ready(
+                "".into(), // URL vacía no debería incluirse
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            queue.push_ready(
+                "https://test.com/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+        }
+
+        assert_eq!(
+            app.queue_urls_text(),
+            "https://test.com/1\nhttps://test.com/2"
+        );
     }
 }

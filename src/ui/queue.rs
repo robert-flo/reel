@@ -18,6 +18,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let mut reintentar_todo: Option<()> = None;
     let mut limpiar_terminadas = false;
     let mut cancelar_activas = false;
+    let mut actions = RowActions::default();
 
     let (jobs, active, done, failed) = {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -176,6 +177,27 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if hit_limpiar.clicked() {
                     limpiar_terminadas = true;
                 }
+                ui.add_space(10.0);
+            }
+
+            let urls_con_contenido = jobs.iter().filter(|j| !j.url.is_empty()).count();
+            if urls_con_contenido > 1 {
+                let hit_copiar_todos = ui
+                    .add(
+                        egui::Label::new(text(
+                            tr.copy_all_links,
+                            11.0,
+                            Weight::Regular,
+                            palette.dim,
+                        ))
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text(tr.copy_all_links_tip);
+                if hit_copiar_todos.clicked() {
+                    actions.copiar_texto = Some(app.queue_urls_text());
+                }
+                ui.add_space(10.0);
             }
 
             if jobs.len() <= 1 {
@@ -196,8 +218,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         empty(ui, app);
         return;
     }
-
-    let mut actions = RowActions::default();
 
     let query = app.queue_search.trim().to_lowercase();
     let visible_jobs: Vec<&crate::backend::Job> = jobs
