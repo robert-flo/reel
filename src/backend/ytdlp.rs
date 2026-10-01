@@ -87,24 +87,6 @@ where
                 }
                 wake();
             }
-            Command::Probe { id, url } => {
-                match probe(&url) {
-                    Ok(media) => {
-                        let _ = events.send(Event::Probed { id, media });
-                        let _ = events.send(Event::StateChanged {
-                            id,
-                            state: State::Queued,
-                        });
-                    }
-                    Err(reason) => {
-                        let _ = events.send(Event::StateChanged {
-                            id,
-                            state: State::Failed { reason },
-                        });
-                    }
-                }
-                wake();
-            }
             Command::Start { id, url, options } => {
                 let _ = events.send(Event::StateChanged {
                     id,

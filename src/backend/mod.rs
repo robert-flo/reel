@@ -186,10 +186,6 @@ pub enum Command {
     Preview {
         url: String,
     },
-    Probe {
-        id: u64,
-        url: String,
-    },
     Start {
         id: u64,
         url: String,
@@ -210,10 +206,6 @@ pub enum Event {
     },
     PreviewFailed {
         reason: String,
-    },
-    Probed {
-        id: u64,
-        media: Media,
     },
     Progress {
         id: u64,
@@ -289,11 +281,6 @@ impl Queue {
             Event::PreviewFailed { reason } => {
                 self.preview = None;
                 self.preview_error = Some(reason);
-            }
-            Event::Probed { id, media } => {
-                if let Some(job) = self.get_mut(id) {
-                    job.media = media;
-                }
             }
             Event::Progress {
                 id,
