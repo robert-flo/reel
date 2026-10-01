@@ -266,9 +266,15 @@ where
                 let handle = std::thread::Builder::new()
                     .name(format!("reel-job-{id}"))
                     .spawn(move || {
+                        if lock(&cancelled).contains(&id) {
+                            return;
+                        }
                         // Esperar cupo es cosa del trabajo, no del supervisor:
                         // asi el resto de la cola sigue andando mientras tanto.
                         if let Some(_cupo) = cupos.tomar(Duration::from_secs(600)) {
+                            if lock(&cancelled).contains(&id) {
+                                return;
+                            }
                             if let Err(error) = run_job(
                                 id,
                                 &ytdlp,
@@ -630,6 +636,10 @@ fn run_job<W>(
 where
     W: Fn() + Send + Sync + 'static,
 {
+    if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
     let (args, dir) = download_args(url, options);
 
     let mut child = Proc::new(ytdlp)
@@ -641,6 +651,14 @@ where
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     lock(running).insert(id, child);
+
+    if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
+        if let Some(mut child) = lock(running).remove(&id) {
+            let _ = child.kill();
+        }
+        return Ok(());
+    }
+
     // Ya hay un yt-dlp corriendo para este trabajo: ahora si.
     let _ = events.send(Event::StateChanged {
         id,

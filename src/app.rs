@@ -57,8 +57,20 @@ pub enum UpdateMessage {
     Aviso(crate::instancia::Aviso),
 }
 
+/// Filtro visible de la cola de descargas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum QueueFilter {
+    #[default]
+    All,
+    Active,
+    Done,
+    Failed,
+}
+
 pub struct App {
     pub url: String,
+    /// Filtro de la cola para ver todas, solo activas, terminadas o falladas.
+    pub queue_filter: QueueFilter,
     /// El formato elegido para el proximo trabajo. Lo demas sale de `settings`.
     pub options: Options,
     /// Lo que dura entre arranques: carpeta, plantilla, cookies y tema.
@@ -165,6 +177,7 @@ impl App {
 
         let mut app = Self {
             url: String::new(),
+            queue_filter: QueueFilter::default(),
             options: Options::default(),
             settings: settings.clone(),
             draft: settings.clone(),
@@ -372,10 +385,12 @@ impl App {
     /// Atajos de teclado globales:
     /// - `Ctrl+,`: abrir/cerrar ajustes
     /// - `Ctrl+Q`: salir
+    /// - `Ctrl+L`: enfocar el campo de enlace
     /// - `Escape`: cerrar ajustes o limpiar url/vista previa
     /// - `Ctrl+V` (sin foco en texto): pegar url y obtener vista previa
     fn handle_shortcuts(&mut self, ui: &egui::Ui) {
         let foco_en_texto = ui.memory(|m| m.focused().is_some());
+        let mut focus_url = false;
         ui.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
                 if self.settings_open {
@@ -388,6 +403,10 @@ impl App {
 
             if i.modifiers.command && i.key_pressed(egui::Key::Q) {
                 self.quit_requested = true;
+            }
+
+            if !foco_en_texto && i.modifiers.command && i.key_pressed(egui::Key::L) {
+                focus_url = true;
             }
 
             if i.key_pressed(egui::Key::Escape) {
@@ -411,6 +430,11 @@ impl App {
                 }
             }
         });
+
+        if focus_url {
+            ui.ctx()
+                .memory_mut(|m| m.request_focus(egui::Id::new("url_input")));
+        }
     }
 
     fn pump(&mut self, ctx: &egui::Context) {
@@ -932,7 +956,7 @@ impl fastframe_shell::Resident for App {
 
 #[cfg(test)]
 mod tests {
-    use super::App;
+    use super::{App, QueueFilter};
 
     /// Una lista chica se encola de un toque; una grande pide confirmar. El
     /// limite es cantidad (>=10) o peso estimado (>=1 GB).
@@ -1145,6 +1169,88 @@ mod tests {
         let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
         out.textures_delta.clear();
         assert!(app.quit_requested);
+
+        // Ctrl+L enfoca el campo de URL
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::ModifiersChanged(cmd));
+        input.events.push(egui::Event::Key {
+            key: egui::Key::L,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: cmd,
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        let focused = ctx.memory(|m| m.focused());
+        assert_eq!(focused, Some(egui::Id::new("url_input")));
+    }
+
+    #[test]
+    fn filtro_de_cola_visibilidad() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        // Encolar tres tipos de trabajos: activo, terminado y fallado
+        let (_id1, _id2, _id3) = {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id1 = q.push_ready(
+                "https://ejemplo.test/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id1).unwrap().state = crate::backend::State::Downloading;
+
+            let id2 = q.push_ready(
+                "https://ejemplo.test/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id2).unwrap().state = crate::backend::State::Done {
+                path: "/tmp/ok.mp4".into(),
+            };
+
+            let id3 = q.push_ready(
+                "https://ejemplo.test/3".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id3).unwrap().state = crate::backend::State::Failed {
+                reason: "error".into(),
+            };
+
+            (id1, id2, id3)
+        };
+
+        // Todas
+        app.queue_filter = QueueFilter::All;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::queue::show(&mut app, ui);
+        });
+        out.textures_delta.clear();
+
+        // Solo activas
+        app.queue_filter = QueueFilter::Active;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::queue::show(&mut app, ui);
+        });
+        out.textures_delta.clear();
+
+        // Solo listas
+        app.queue_filter = QueueFilter::Done;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::queue::show(&mut app, ui);
+        });
+        out.textures_delta.clear();
+
+        // Solo errores
+        app.queue_filter = QueueFilter::Failed;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::queue::show(&mut app, ui);
+        });
+        out.textures_delta.clear();
     }
 
     #[test]

@@ -20,6 +20,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let field_width = ui.available_width() - (button_width * 2.0) - (Metrics::GAP * 2.0);
 
         let field = egui::TextEdit::singleline(&mut app.url)
+            .id(egui::Id::new("url_input"))
             .hint_text(text("pega un enlace", 13.0, Weight::Regular, palette.dim))
             .font(Weight::Regular.font_id(13.0))
             .margin(egui::Margin::symmetric(16, 0))
@@ -36,8 +37,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         );
         if paste.clicked() {
             if let Some(clipped) = app.clipboard_text(ui.ctx()) {
-                app.url = clipped;
-                response.request_focus();
+                let trimmed = clipped.trim();
+                if !trimmed.is_empty() {
+                    app.url = trimmed.to_string();
+                    app.preview_current_url();
+                } else {
+                    app.url = clipped;
+                    response.request_focus();
+                }
             }
         }
 

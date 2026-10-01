@@ -67,8 +67,13 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Subtítulos automáticos de respaldo**: soporte para `--write-auto-subs` junto a
   `--write-subs`, para incrustar subtítulos generados automáticamente si no hay
   pistas manuales disponibles en los idiomas elegidos.
-- **Atajos de teclado**: `Ctrl+,` (ajustes), `Ctrl+Q` (salir), `Escape` (cerrar
-  ajustes o limpiar enlace/ficha) y `Ctrl+V` (pegar y buscar automáticamente).
+- **Atajos de teclado**: `Ctrl+,` (ajustes), `Ctrl+Q` (salir), `Ctrl+L` (enfocar enlace),
+  `Escape` (cerrar ajustes o limpiar enlace/ficha) y `Ctrl+V` (pegar y buscar automáticamente).
+- **Filtros interactivos de cola**: cuando hay varios trabajos, la cabecera ofrece
+  filtros instantáneos (`todas`, `activas`, `listas`, `con error`), facilitando
+  seguir descargas en listas de decenas de elementos.
+- **Cancelación sin carreras en cola**: los trabajos cancelados mientras esperan
+  cupo de concurrencia se detienen limpiamente y nunca pisan su estado con `descargando`.
 - **Pruebas de interfaz automatizadas (headless)**: la UI se prueba de extremo a
   extremo sin necesidad de pantalla ni herramientas externas mediante
   `egui::Context::run_ui`, validando atajos, confirmaciones y renderizado de
@@ -160,6 +165,7 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 |---|---|
 | `Ctrl+,` | Abrir o cerrar el panel de ajustes |
 | `Ctrl+Q` | Salir de la aplicación |
+| `Ctrl+L` | Enfocar el campo de enlace de la barra superior |
 | `Escape` | Cerrar modal de ajustes, o limpiar la ficha y el campo de enlace |
 | `Ctrl+V` | Pegar enlace y buscar ficha automáticamente (sin foco en campo de texto) |
 
@@ -212,6 +218,9 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
 - **Quitar** elimina la fila individual de la cola (para trabajos no activos).
 - **Limpiar terminadas** en la cabecera remueve todas las descargas inactivas
   (listas, canceladas o falladas) de una sola vez.
+- **Filtros rápidos** (`todas`, `activas`, `listas`, `con error`) aparecen en la
+  cabecera cuando hay más de una descarga en curso, permitiendo aislar
+  rápidamente las fallidas o las que están bajando.
 
 ### Cuantos a la vez
 

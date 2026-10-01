@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use egui::{CornerRadius, Stroke};
 use fastframe_fonts::Weight;
 
-use crate::app::App;
+use crate::app::{App, QueueFilter};
 use crate::backend::{Command, State};
 
 use super::widgets::{caption, progress_bar, text};
@@ -17,9 +17,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let mut reintentar_todo: Option<()> = None;
     let mut limpiar_terminadas = false;
 
-    let (jobs, active, done) = {
+    let (jobs, active, done, failed) = {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
-        (queue.jobs.clone(), queue.active(), queue.done())
+        let failed = queue
+            .jobs
+            .iter()
+            .filter(|job| matches!(job.state, State::Failed { .. }))
+            .count();
+        (queue.jobs.clone(), queue.active(), queue.done(), failed)
     };
 
     // Los que ya terminaron se pueden volver a pedir, y al reintentar se
@@ -28,21 +33,58 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.label(text("COLA", 11.0, Weight::SemiBold, palette.dim));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(caption(
-                format!(
-                    "{active} {}  ·  {done} {}",
-                    if active == 1 { "activa" } else { "activas" },
-                    if done == 1 {
-                        "completada"
-                    } else {
-                        "completadas"
+
+        if jobs.len() > 1 {
+            ui.add_space(8.0);
+            let mut filter_chip =
+                |ui: &mut egui::Ui, label: &str, count: usize, filter: QueueFilter| {
+                    if count == 0 && app.queue_filter != filter {
+                        return;
                     }
-                ),
-                &palette,
-            ));
+                    let is_selected = app.queue_filter == filter;
+                    let text_label = format!("{label} ({count})");
+                    let color = if is_selected {
+                        palette.accent
+                    } else if filter == QueueFilter::Failed && count > 0 {
+                        palette.danger
+                    } else {
+                        palette.dim
+                    };
+                    let hit = ui
+                        .add(
+                            egui::Label::new(text(
+                                text_label,
+                                11.0,
+                                if is_selected {
+                                    Weight::SemiBold
+                                } else {
+                                    Weight::Regular
+                                },
+                                color,
+                            ))
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if hit.clicked() {
+                        app.queue_filter = if is_selected && filter != QueueFilter::All {
+                            QueueFilter::All
+                        } else {
+                            filter
+                        };
+                    }
+                    ui.add_space(6.0);
+                };
+
+            filter_chip(ui, "todas", jobs.len(), QueueFilter::All);
+            filter_chip(ui, "activas", active, QueueFilter::Active);
+            filter_chip(ui, "listas", done, QueueFilter::Done);
+            if failed > 0 {
+                filter_chip(ui, "con error", failed, QueueFilter::Failed);
+            }
+        }
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if retryable > 0 {
-                ui.add_space(12.0);
                 let hit_reintentar = ui
                     .add(
                         egui::Label::new(text(
@@ -74,6 +116,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     limpiar_terminadas = true;
                 }
             }
+
+            if jobs.len() <= 1 {
+                let mut status_parts = Vec::new();
+                status_parts.push(format!(
+                    "{active} {}",
+                    if active == 1 { "activa" } else { "activas" }
+                ));
+                status_parts.push(format!(
+                    "{done} {}",
+                    if done == 1 {
+                        "completada"
+                    } else {
+                        "completadas"
+                    }
+                ));
+                if failed > 0 {
+                    status_parts.push(format!(
+                        "{failed} {}",
+                        if failed == 1 { "fallada" } else { "falladas" }
+                    ));
+                }
+                ui.label(caption(status_parts.join("  ·  "), &palette));
+            }
         });
     });
 
@@ -86,12 +151,35 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let mut actions = RowActions::default();
 
+    let visible_jobs: Vec<&crate::backend::Job> = jobs
+        .iter()
+        .filter(|job| match app.queue_filter {
+            QueueFilter::All => true,
+            QueueFilter::Active => job.is_active(),
+            QueueFilter::Done => matches!(job.state, State::Done { .. }),
+            QueueFilter::Failed => matches!(job.state, State::Failed { .. }),
+        })
+        .collect();
+
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
-            for job in &jobs {
-                row(ui, app, job, &mut actions);
-                ui.add_space(Metrics::GAP);
+            if visible_jobs.is_empty() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(28.0);
+                    let msg = match app.queue_filter {
+                        QueueFilter::Active => "no hay descargas activas",
+                        QueueFilter::Done => "no hay descargas terminadas",
+                        QueueFilter::Failed => "no hay descargas con error",
+                        QueueFilter::All => "la cola esta vacia",
+                    };
+                    ui.label(text(msg, 12.0, Weight::Regular, palette.dim));
+                });
+            } else {
+                for job in visible_jobs {
+                    row(ui, app, job, &mut actions);
+                    ui.add_space(Metrics::GAP);
+                }
             }
         });
 
