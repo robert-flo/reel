@@ -30,7 +30,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ));
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if link(ui, "ajustes", app).clicked() {
+                    if link(ui, app.tr().settings, app).clicked() {
                         app.open_settings();
                     }
                 });

@@ -13,6 +13,7 @@ use super::Metrics;
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
     let height = Metrics::URL_ROW;
 
     ui.horizontal(|ui| {
@@ -21,7 +22,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
         let field = egui::TextEdit::singleline(&mut app.url)
             .id(egui::Id::new("url_input"))
-            .hint_text(text("pega un enlace", 13.0, Weight::Regular, palette.dim))
+            .hint_text(text(tr.url_hint, 13.0, Weight::Regular, palette.dim))
             .font(Weight::Regular.font_id(13.0))
             .margin(egui::Margin::symmetric(16, 0))
             .vertical_align(egui::Align::Center)
@@ -32,9 +33,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
         ui.add_space(Metrics::GAP);
         let second_label = if !app.url.is_empty() {
-            "limpiar"
+            tr.clear
         } else {
-            "pegar"
+            tr.paste
         };
         let second_btn = ui.add_sized(
             Vec2::new(button_width, height),
@@ -62,7 +63,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
         ui.add_space(Metrics::GAP);
         let enabled = !app.url.trim().is_empty() && !app.probing;
-        let label = if app.probing { "leyendo" } else { "buscar" };
+        let label = if app.probing { tr.reading } else { tr.search };
         let go = ui.add_enabled(
             enabled,
             egui::Button::new(text(

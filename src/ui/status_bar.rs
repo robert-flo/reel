@@ -40,6 +40,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 fn herramientas_corner(app: &App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let herramientas = &app.herramientas;
+    let tr = app.tr();
 
     // Todavia no contestaron los hilos: mejor callarse que decir algo falso a
     // medias.
@@ -47,7 +48,7 @@ fn herramientas_corner(app: &App, ui: &mut egui::Ui) {
         return;
     }
 
-    match resumen_de_herramientas(herramientas) {
+    match resumen_de_herramientas(herramientas, tr) {
         Resumen::Ok { ytdlp, ffmpeg } => {
             ui.label(caption(
                 format!("yt-dlp {ytdlp} · ffmpeg {ffmpeg}"),
@@ -70,20 +71,21 @@ enum Resumen {
     Esperando,
 }
 
-fn resumen_de_herramientas(herramientas: &crate::app::Herramientas) -> Resumen {
+fn resumen_de_herramientas(
+    herramientas: &crate::app::Herramientas,
+    tr: &crate::i18n::Catalog,
+) -> Resumen {
     // yt-dlp primero: sin el no hay descargas, asi que su falla tapa a la otra.
     if let Some(Err(motivo)) = &herramientas.ytdlp {
         return Resumen::Falta {
-            etiqueta: "sin yt-dlp no puedo bajar nada".into(),
+            etiqueta: tr.missing_ytdlp.into(),
             motivo: motivo.clone(),
         };
     }
     if let Some(Err(motivo)) = &herramientas.ffmpeg {
         return Resumen::Falta {
-            etiqueta: "sin ffmpeg no puedo unir ni convertir".into(),
-            motivo: format!(
-                "{motivo}\n\nsin ffmpeg se baja el archivo tal como viene: no se unen pistas, no se extrae audio y no se incrustan metadatos"
-            ),
+            etiqueta: tr.missing_ffmpeg.into(),
+            motivo: format!("{motivo}\n\n{}", tr.missing_ffmpeg_extra),
         };
     }
 
@@ -99,6 +101,7 @@ fn resumen_de_herramientas(herramientas: &crate::app::Herramientas) -> Resumen {
 
 fn update_corner(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
 
     match &app.update {
         UpdateState::Idle | UpdateState::Checking => {}
@@ -109,7 +112,7 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
             ui.label(caption(reason.clone(), &palette));
         }
         UpdateState::Available { version } => {
-            let label = format!("{version} disponible  ·  actualizar");
+            let label = tr.update_available(version);
             let galley =
                 ui.painter()
                     .layout_no_wrap(label, Weight::Medium.font_id(11.0), palette.done);
@@ -130,7 +133,7 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
                 0
             };
             ui.label(text(
-                format!("descargando actualizacion {percent}%"),
+                tr.update_progress(percent),
                 11.0,
                 Weight::Medium,
                 palette.accent,
@@ -139,7 +142,7 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
         UpdateState::Ready => {
             if ui
                 .button(text(
-                    "reiniciar para actualizar",
+                    tr.update_restart,
                     11.0,
                     Weight::Medium,
                     palette.on_accent,
@@ -153,7 +156,7 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
             // Mientras no haya releases publicados el servidor contesta 404, y
             // eso no es una falla que merezca ser lo unico rojo de la ventana:
             // se dice en gris y el detalle queda en el hover.
-            ui.label(caption("no pude revisar actualizaciones", &palette))
+            ui.label(caption(tr.update_check_failed, &palette))
                 .on_hover_text(reason.clone());
         }
     }
@@ -179,7 +182,7 @@ mod tests {
             ytdlp: ok("2026.08.19"),
             ffmpeg: ok("n9.0.2"),
         };
-        match resumen_de_herramientas(&herramientas) {
+        match resumen_de_herramientas(&herramientas, crate::i18n::Language::En.catalog()) {
             Resumen::Ok { ytdlp, ffmpeg } => {
                 assert_eq!(ytdlp, "2026.08.19");
                 assert_eq!(ffmpeg, "n9.0.2");
@@ -197,7 +200,7 @@ mod tests {
             ytdlp: ok("2026.08.19"),
             ffmpeg: falla("no encuentro ffmpeg"),
         };
-        match resumen_de_herramientas(&herramientas) {
+        match resumen_de_herramientas(&herramientas, crate::i18n::Language::En.catalog()) {
             Resumen::Falta { etiqueta, motivo } => {
                 assert!(
                     etiqueta.contains("ffmpeg"),
@@ -208,6 +211,16 @@ mod tests {
             }
             _ => panic!("deberia avisar de ffmpeg"),
         }
+        match resumen_de_herramientas(&herramientas, crate::i18n::Language::Es.catalog()) {
+            Resumen::Falta { etiqueta, .. } => {
+                assert!(
+                    etiqueta.contains("ffmpeg"),
+                    "etiqueta en espanol equivocada: {etiqueta}"
+                );
+                assert!(etiqueta.contains("unir") || etiqueta.contains("convertir"));
+            }
+            _ => panic!("deberia avisar de ffmpeg en espanol"),
+        }
     }
 
     /// Si faltan las dos, manda yt-dlp: sin el no hay descargas de nada.
@@ -217,7 +230,7 @@ mod tests {
             ytdlp: falla("no encuentro yt-dlp"),
             ffmpeg: falla("no encuentro ffmpeg"),
         };
-        match resumen_de_herramientas(&herramientas) {
+        match resumen_de_herramientas(&herramientas, crate::i18n::Language::En.catalog()) {
             Resumen::Falta { etiqueta, .. } => {
                 assert!(etiqueta.contains("yt-dlp"), "etiqueta: {etiqueta}");
             }
@@ -234,7 +247,7 @@ mod tests {
             ffmpeg: None,
         };
         assert!(matches!(
-            resumen_de_herramientas(&herramientas),
+            resumen_de_herramientas(&herramientas, crate::i18n::Language::En.catalog()),
             Resumen::Esperando
         ));
     }

@@ -1608,7 +1608,7 @@ impl Queue {
         if let Some(job) = self.get_mut(id) {
             job.progress = 1.0;
             job.state = State::Done {
-                path: format!("{cuantos} videos abajo"),
+                path: crate::i18n::playlist_done_marker(cuantos),
             };
         }
 

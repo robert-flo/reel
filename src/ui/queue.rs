@@ -14,6 +14,7 @@ use super::{human_eta, human_speed, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
     let mut reintentar_todo: Option<()> = None;
     let mut limpiar_terminadas = false;
 
@@ -40,7 +41,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .sum();
 
     ui.horizontal(|ui| {
-        ui.label(text("COLA", 11.0, Weight::SemiBold, palette.dim));
+        ui.label(text(tr.queue, 11.0, Weight::SemiBold, palette.dim));
         if total_speed > 0.0 {
             ui.add_space(4.0);
             ui.label(text(
@@ -92,11 +93,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_space(6.0);
                 };
 
-            filter_chip(ui, "todas", jobs.len(), QueueFilter::All);
-            filter_chip(ui, "activas", active, QueueFilter::Active);
-            filter_chip(ui, "listas", done, QueueFilter::Done);
+            filter_chip(ui, tr.filter_all, jobs.len(), QueueFilter::All);
+            filter_chip(ui, tr.filter_active, active, QueueFilter::Active);
+            filter_chip(ui, tr.filter_done, done, QueueFilter::Done);
             if failed > 0 {
-                filter_chip(ui, "con error", failed, QueueFilter::Failed);
+                filter_chip(ui, tr.filter_failed, failed, QueueFilter::Failed);
             }
         }
 
@@ -104,7 +105,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(6.0);
             let search_edit = egui::TextEdit::singleline(&mut app.queue_search)
                 .id(egui::Id::new("queue_search_input"))
-                .hint_text(text("buscar...", 11.0, Weight::Regular, palette.dim))
+                .hint_text(text(tr.search_hint, 11.0, Weight::Regular, palette.dim))
                 .font(Weight::Regular.font_id(11.0))
                 .margin(egui::Margin::symmetric(6, 2))
                 .desired_width(110.0);
@@ -127,7 +128,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 let hit_reintentar = ui
                     .add(
                         egui::Label::new(text(
-                            format!("reintentar fallidas ({failed_or_cancelled})"),
+                            format!("{} ({failed_or_cancelled})", tr.retry_failed),
                             11.0,
                             Weight::Regular,
                             palette.dim,
@@ -145,7 +146,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 let hit_limpiar = ui
                     .add(
                         egui::Label::new(text(
-                            "limpiar terminadas",
+                            tr.clear_finished,
                             11.0,
                             Weight::Regular,
                             palette.dim,
@@ -160,23 +161,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
             if jobs.len() <= 1 {
                 let mut status_parts = Vec::new();
-                status_parts.push(format!(
-                    "{active} {}",
-                    if active == 1 { "activa" } else { "activas" }
-                ));
-                status_parts.push(format!(
-                    "{done} {}",
-                    if done == 1 {
-                        "completada"
-                    } else {
-                        "completadas"
-                    }
-                ));
+                status_parts.push(tr.counted(active, tr.active_one, tr.active_many));
+                status_parts.push(tr.counted(done, tr.completed_one, tr.completed_many));
                 if failed > 0 {
-                    status_parts.push(format!(
-                        "{failed} {}",
-                        if failed == 1 { "fallada" } else { "falladas" }
-                    ));
+                    status_parts.push(tr.counted(failed, tr.failed_one, tr.failed_many));
                 }
                 ui.label(caption(status_parts.join("  ·  "), &palette));
             }
@@ -216,13 +204,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.vertical_centered(|ui| {
                     ui.add_space(28.0);
                     let msg = if !query.is_empty() {
-                        format!("ninguna descarga coincide con \"{query}\"")
+                        tr.no_match(&query)
                     } else {
                         match app.queue_filter {
-                            QueueFilter::Active => "no hay descargas activas".into(),
-                            QueueFilter::Done => "no hay descargas terminadas".into(),
-                            QueueFilter::Failed => "no hay descargas con error".into(),
-                            QueueFilter::All => "la cola esta vacia".into(),
+                            QueueFilter::Active => tr.no_active.to_string(),
+                            QueueFilter::Done => tr.no_done.to_string(),
+                            QueueFilter::Failed => tr.no_failed.to_string(),
+                            QueueFilter::All => tr.empty_title.to_string(),
                         }
                     };
                     ui.label(text(&msg, 12.0, Weight::Regular, palette.dim));
@@ -231,7 +219,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         let hit_clear = ui
                             .add(
                                 egui::Label::new(text(
-                                    "limpiar busqueda",
+                                    tr.clear_search,
                                     11.0,
                                     Weight::Medium,
                                     palette.accent,
@@ -332,42 +320,48 @@ struct RowActions {
 
 fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut RowActions) {
     let palette = app.palette;
+    let tr = app.tr();
 
     let (status, status_color, detail) = match &job.state {
-        State::Probing => ("leyendo el enlace".into(), palette.dim, String::new()),
-        State::Queued => ("en espera".into(), palette.dim, String::new()),
+        State::Probing => (tr.status_probing.to_string(), palette.dim, String::new()),
+        State::Queued => (tr.status_queued.to_string(), palette.dim, String::new()),
         State::Downloading => {
             let mut parts = Vec::new();
             if let Some(speed) = job.speed {
                 parts.push(human_speed(speed));
             }
             if let Some(eta) = job.eta_secs {
-                parts.push(format!("{} restante", human_eta(eta)));
+                parts.push(tr.remaining_eta(&human_eta(eta)));
             }
-            ("descargando".to_string(), palette.accent, parts.join(" · "))
+            (
+                tr.status_downloading.to_string(),
+                palette.accent,
+                parts.join(" · "),
+            )
         }
         State::Postprocessing { .. } => (
-            "esperando ffmpeg".to_string(),
+            tr.status_waiting_ffmpeg.to_string(),
             palette.warning,
-            // Lo que yt-dlp dijo que esta haciendo, si lo dijo.
             job.postprocessor
                 .as_deref()
-                .map(postprocessor_label)
-                .unwrap_or("postprocesando")
-                .to_string(),
+                .map(|name| tr.postprocessor(name).to_string())
+                .unwrap_or_else(|| tr.pp_generic.to_string()),
         ),
-        State::Done { path } => ("listo".to_string(), palette.done, path.clone()),
+        State::Done { path } => {
+            let detail = crate::i18n::parse_playlist_done(path)
+                .map(|n| tr.playlist_done(n))
+                .unwrap_or_else(|| path.clone());
+            (tr.status_done.to_string(), palette.done, detail)
+        }
         State::Failed { reason } => (
-            "fallo".to_string(),
+            tr.status_failed.to_string(),
             palette.danger,
-            // El error de yt-dlp tal cual, y si lo reconocemos, que hacer.
-            // El mensaje crudo no se esconde: es la unica forma de reportarlo.
             match crate::backend::ytdlp::consejo_para(reason) {
-                Some(consejo) => format!("{reason}\n{consejo}"),
+                Some(consejo) => format!("{reason}\n{}", tr.consejo(consejo)),
                 None => reason.clone(),
             },
         ),
-        State::Cancelled => ("cancelado".to_string(), palette.dim, String::new()),
+        State::Cancelled => (tr.status_cancelled.to_string(), palette.dim, String::new()),
     };
 
     let bar_color = match &job.state {
@@ -386,7 +380,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     let title = if job.media.title.is_empty() {
-                        job.url.clone()
+                        tr.untitled.to_string()
                     } else {
                         job.media.title.clone()
                     };
@@ -396,7 +390,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                     )
                     .on_hover_text(&title);
                     ui.add_space(4.0);
-                    ui.label(caption(job_format_label(job), &palette));
+                    ui.label(caption(job_format_label(job, tr), &palette));
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
@@ -406,7 +400,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                 let hit = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "cancelar",
+                                            tr.cancel,
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -425,7 +419,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                 let hit = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "reintentar",
+                                            tr.retry,
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -448,7 +442,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                 let hit = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "volver a bajar",
+                                            tr.redownload,
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -468,7 +462,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     let hit_copiar = ui
                                         .add(
                                             egui::Label::new(text(
-                                                "copiar ruta",
+                                                tr.copy_path,
                                                 11.0,
                                                 Weight::Regular,
                                                 palette.dim,
@@ -484,7 +478,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     let hit_carpeta = ui
                                         .add(
                                             egui::Label::new(text(
-                                                "carpeta",
+                                                tr.folder,
                                                 11.0,
                                                 Weight::Regular,
                                                 palette.dim,
@@ -501,7 +495,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     let hit_abrir = ui
                                         .add(
                                             egui::Label::new(text(
-                                                "abrir",
+                                                tr.open,
                                                 11.0,
                                                 Weight::Regular,
                                                 palette.dim,
@@ -517,7 +511,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     let hit_carpeta = ui
                                         .add(
                                             egui::Label::new(text(
-                                                "abrir carpeta",
+                                                tr.open_folder,
                                                 11.0,
                                                 Weight::Regular,
                                                 palette.dim,
@@ -536,7 +530,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                 let hit_copiar = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "copiar error",
+                                            tr.copy_error,
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -554,7 +548,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                 let hit_quitar = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "quitar",
+                                            tr.remove,
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -580,20 +574,11 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
         });
 }
 
-/// El nombre del paso de yt-dlp como lo diria una persona.
-fn postprocessor_label(postprocessor: &str) -> &'static str {
-    match postprocessor {
-        "Merger" => "fusionando pistas",
-        "ExtractAudio" => "extrayendo el audio",
-        "EmbedThumbnail" => "poniendo la caratula",
-        _ => "postprocesando",
-    }
-}
-
 /// "1080p · mp4" o "mp3 · 320k": la calidad y el contenedor que de verdad va a
 /// quedar en el disco, que es lo unico que importa en una fila de la cola.
-fn job_format_label(job: &crate::backend::Job) -> String {
+fn job_format_label(job: &crate::backend::Job, tr: &crate::i18n::Catalog) -> String {
     let format = crate::backend::format_by_id(&job.options.format_id);
+    let label = tr.format_label(format.id, format.label);
     let container = format
         .args
         .windows(2)
@@ -607,22 +592,23 @@ fn job_format_label(job: &crate::backend::Job) -> String {
 
     match (container, quality) {
         (Some(container), Some(quality)) => format!("{container} · {quality}"),
-        (Some(container), None) => format!("{} · {container}", format.label.to_lowercase()),
-        (None, _) => format.label.to_lowercase(),
+        (Some(container), None) => format!("{} · {container}", label.to_lowercase()),
+        (None, _) => label.to_lowercase(),
     }
 }
 
 fn empty(ui: &mut egui::Ui, app: &App) {
     let palette = app.palette;
+    let tr = app.tr();
     ui.vertical_centered(|ui| {
         ui.add_space(48.0);
         ui.label(text(
-            "la cola esta vacia",
+            tr.empty_title,
             14.0,
             Weight::Medium,
             palette.secondary,
         ));
         ui.add_space(6.0);
-        ui.label(caption("pega un enlace arriba y aparece aqui", &palette));
+        ui.label(caption(tr.empty_hint, &palette));
     });
 }

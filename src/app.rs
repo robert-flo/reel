@@ -9,6 +9,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use fastframe_theme::{Catalog, DesktopThemes, Transition, Waker as ThemeWaker};
 
 use crate::backend::{Backend, Command, Media, Options};
+use crate::i18n::Language;
 use crate::palette::Palette;
 use crate::settings;
 use crate::ui;
@@ -142,6 +143,11 @@ impl App {
 
         let (update_tx, update_rx) = std::sync::mpsc::channel();
 
+        // Lo elegido la ultima vez: el tema y el idioma arrancan de ahi y no
+        // del default, que era justo lo que se perdia al cerrar.
+        let settings = settings::Settings::load();
+        let tr = settings.language.catalog();
+
         let tray = {
             let waker = waker.clone();
             fastframe_tray::Tray::spawn(
@@ -151,11 +157,11 @@ impl App {
                     icon: crate::icon::app_icon_rgba,
                     template_icon: Some(crate::icon::tray_template_rgba),
                     menu: vec![
-                        fastframe_tray::MenuItem::action("show", "Mostrar reel"),
+                        fastframe_tray::MenuItem::action("show", tr.tray_show),
                         fastframe_tray::MenuItem::Separator,
-                        fastframe_tray::MenuItem::action("paste", "Pegar y descargar"),
+                        fastframe_tray::MenuItem::action("paste", tr.tray_paste),
                         fastframe_tray::MenuItem::Separator,
-                        fastframe_tray::MenuItem::action("quit", "Salir"),
+                        fastframe_tray::MenuItem::action("quit", tr.tray_quit),
                     ],
                 },
                 move || waker.wake(),
@@ -168,9 +174,6 @@ impl App {
             ThemeWaker::new(move || waker.wake())
         };
 
-        // Lo elegido la ultima vez: el tema arranca de ahi y no del default,
-        // que era justo lo que se perdia al cerrar.
-        let settings = settings::Settings::load();
         let default_browser = if settings.cookies_browser.trim().is_empty() {
             settings::detect_browser()
         } else {
@@ -216,6 +219,22 @@ impl App {
         app.selected_theme = app.settings.theme.clone();
         app.sync_options_from_settings();
         app
+    }
+
+    /// Los textos de la interfaz en el idioma elegido.
+    pub fn tr(&self) -> &'static crate::i18n::Catalog {
+        self.settings.language.catalog()
+    }
+
+    /// Cambiar el idioma se aplica en el frame siguiente: egui redibuja con
+    /// el catalogo nuevo, sin reiniciar. El menu del tray nacio con el idioma
+    /// del arranque y se actualiza la proxima vez que se abre la app.
+    pub fn select_language(&mut self, language: Language) {
+        if self.settings.language == language {
+            return;
+        }
+        self.settings.language = language;
+        self.settings_changed();
     }
 
     /// El formato lo elige la ficha; lo demas son ajustes, y viven en un solo
@@ -578,17 +597,7 @@ impl App {
         }
 
         // Si nada salio bien, decirlo tambien tiene valor.
-        let cuerpo = match (hechos, fallados) {
-            (0, n) => format!(
-                "{n} {} fallo",
-                if n == 1 { "descarga" } else { "descargas" }
-            ),
-            (n, 0) => format!(
-                "{n} {} listo",
-                if n == 1 { "descarga" } else { "descargas" }
-            ),
-            (bien, mal) => format!("{bien} listas, {mal} con error"),
-        };
+        let cuerpo = self.tr().notify_body(hechos, fallados);
         avisar("reel", &cuerpo);
     }
 
@@ -959,18 +968,18 @@ impl App {
     }
 
     pub fn theme_label(&self) -> String {
+        let tr = self.tr();
         if self.themes.follows_omarchy() && self.selected_theme.is_none() {
             match self.themes.system_theme() {
-                Some(theme) => format!(
-                    "tema: siguiendo omarchy ({})",
-                    fastframe_theme::display_name(&theme.filename)
-                ),
-                None => "tema: siguiendo omarchy".into(),
+                Some(theme) => {
+                    tr.theme_omarchy_named(fastframe_theme::display_name(&theme.filename))
+                }
+                None => tr.theme_omarchy.into(),
             }
         } else {
             match &self.selected_theme {
-                Some(name) => format!("tema: {name}"),
-                None => "tema: por defecto".into(),
+                Some(name) => tr.theme_named(name),
+                None => tr.theme_default.into(),
             }
         }
     }
@@ -1086,6 +1095,21 @@ mod tests {
         assert!(!App::pide_confirmacion(3, Some(500_000_000)));
         assert!(App::pide_confirmacion(3, Some(1_000_000_000)));
         assert!(App::pide_confirmacion(2, Some(2_500_000_000)));
+    }
+
+    #[test]
+    fn el_idioma_por_defecto_es_ingles_y_cambia_sin_reiniciar() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        assert_eq!(app.settings.language, crate::i18n::Language::En);
+        assert_eq!(app.tr().settings, "settings");
+        assert_eq!(app.tr().queue, "QUEUE");
+
+        app.select_language(crate::i18n::Language::Es);
+        assert_eq!(app.settings.language, crate::i18n::Language::Es);
+        assert_eq!(app.tr().settings, "ajustes");
+        assert_eq!(app.tr().queue, "COLA");
+        assert_eq!(app.tr().empty_title, "la cola está vacía");
     }
 
     #[test]
