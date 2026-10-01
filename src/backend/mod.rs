@@ -144,6 +144,8 @@ pub struct Options {
     pub sponsorblock: bool,
     /// Argumentos adicionales que se le pasan directamente a yt-dlp (ej: "--proxy ...").
     pub extra_args: Option<String>,
+    /// `--download-sections`: rango de tiempo a descargar (ej: "*01:30-03:45").
+    pub download_sections: Option<String>,
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
@@ -170,10 +172,27 @@ impl Default for Options {
             rate_limit: None,
             sponsorblock: false,
             extra_args: None,
+            download_sections: None,
             playlist: false,
             force: false,
         }
     }
+}
+
+/// Construye la seccion de tiempo para `--download-sections` a partir de un inicio y fin.
+pub fn format_download_section(start: &str, end: &str) -> Option<String> {
+    let s = start.trim();
+    let e = end.trim();
+    if s.is_empty() && e.is_empty() {
+        return None;
+    }
+    let section = match (s.is_empty(), e.is_empty()) {
+        (false, false) => format!("*{s}-{e}"),
+        (false, true) => format!("*{s}-inf"),
+        (true, false) => format!("*0-{e}"),
+        (true, true) => return None,
+    };
+    Some(section)
 }
 
 #[derive(Clone, Debug, Default)]

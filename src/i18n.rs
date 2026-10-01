@@ -109,6 +109,10 @@ i18n_strings! {
     metadata_artwork: { en: "metadata + artwork", es: "metadatos + carátula" }
     subtitles: { en: "subtitles", es: "subtítulos" }
     browser_cookies: { en: "browser cookies", es: "cookies del navegador" }
+    clip: { en: "clip", es: "recortar" }
+    clip_tip: { en: "download only a specific time segment", es: "descarga únicamente un fragmento de tiempo específico" }
+    clip_from: { en: "from:", es: "desde:" }
+    clip_to: { en: "to:", es: "hasta:" }
     format_best: { en: "Best", es: "Mejor" }
     format_video: { en: "video", es: "video" }
     format_audio_only: { en: "audio only", es: "solo audio" }

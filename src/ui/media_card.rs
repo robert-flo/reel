@@ -312,7 +312,52 @@ fn extras(app: &mut App, ui: &mut egui::Ui) {
         ) {
             app.options.cookies_from_browser = cookies.then(|| app.default_browser.clone());
         }
+
+        let es_video_suelto = app
+            .preview
+            .as_ref()
+            .is_none_or(|m| m.playlist_count.is_none());
+        if es_video_suelto {
+            let mut clip = app.clip_enabled;
+            if toggle(
+                ui,
+                tr.clip,
+                &mut clip,
+                &mut first,
+                &palette,
+                Some(tr.clip_tip),
+            ) {
+                app.clip_enabled = clip;
+            }
+        }
     });
+
+    let es_video_suelto = app
+        .preview
+        .as_ref()
+        .is_none_or(|m| m.playlist_count.is_none());
+    if es_video_suelto && app.clip_enabled {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(text(tr.clip_from, 11.0, Weight::Regular, palette.dim));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.clip_start)
+                    .hint_text("00:00")
+                    .desired_width(50.0)
+                    .font(Weight::Regular.font_id(11.0))
+                    .margin(egui::Margin::symmetric(6, 2)),
+            );
+            ui.add_space(8.0);
+            ui.label(text(tr.clip_to, 11.0, Weight::Regular, palette.dim));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.clip_end)
+                    .hint_text("05:00")
+                    .desired_width(50.0)
+                    .font(Weight::Regular.font_id(11.0))
+                    .margin(egui::Margin::symmetric(6, 2)),
+            );
+        });
+    }
 }
 
 /// Una opcion como texto: encendida se lee clara, apagada se apaga. Sin

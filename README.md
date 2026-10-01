@@ -121,6 +121,9 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   (como `--proxy socks5://127.0.0.1:9050` o `--geo-bypass`).
 - **Persistencia de capítulos y metadatos**: la configuración predeterminada de incrustar capítulos
   y carátula/etiquetas ahora se guarda en `settings.json` y se recuerda entre arranques.
+- **Descarga de fragmentos y recorte por tiempo (`--download-sections`)**: opción `recortar` en la
+  ficha para especificar tiempo de inicio y fin (ej. `01:30` a `03:45`) y descargar únicamente el
+  fragmento deseado del video o audio, con precisión de corte mediante `--force-keyframes-at-cuts`.
 
 ### Falta
 

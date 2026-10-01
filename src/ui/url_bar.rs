@@ -49,6 +49,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 app.preview_error = None;
                 app.probing = false;
                 app.confirmar_lista = None;
+                app.clip_enabled = false;
+                app.clip_start.clear();
+                app.clip_end.clear();
             } else if let Some(clipped) = app.clipboard_text(ui.ctx()) {
                 let trimmed = clipped.trim();
                 if !trimmed.is_empty() {

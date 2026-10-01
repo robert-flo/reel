@@ -668,6 +668,11 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
             args.push(part);
         }
     }
+    if let Some(sections) = &options.download_sections {
+        args.push("--download-sections".into());
+        args.push(sections.clone());
+        args.push("--force-keyframes-at-cuts".into());
+    }
     args.push(url.into());
 
     (args, dir)
@@ -1407,5 +1412,36 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--geo-bypass"));
         assert!(args.iter().any(|arg| arg == "--proxy"));
         assert!(args.iter().any(|arg| arg == "socks5://127.0.0.1:9050"));
+    }
+
+    #[test]
+    fn format_download_section_arma_los_rangos() {
+        use crate::backend::format_download_section;
+        assert_eq!(
+            format_download_section("01:30", "03:45"),
+            Some("*01:30-03:45".into())
+        );
+        assert_eq!(
+            format_download_section("01:30", ""),
+            Some("*01:30-inf".into())
+        );
+        assert_eq!(
+            format_download_section("", "03:45"),
+            Some("*0-03:45".into())
+        );
+        assert_eq!(format_download_section("", ""), None);
+        assert_eq!(format_download_section("  ", "  "), None);
+    }
+
+    #[test]
+    fn la_descarga_lleva_download_sections() {
+        let options = Options {
+            download_sections: Some("*01:30-03:45".into()),
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--download-sections"));
+        assert!(args.iter().any(|arg| arg == "*01:30-03:45"));
+        assert!(args.iter().any(|arg| arg == "--force-keyframes-at-cuts"));
     }
 }

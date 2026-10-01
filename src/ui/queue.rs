@@ -648,10 +648,16 @@ fn job_format_label(job: &crate::backend::Job, tr: &crate::i18n::Catalog) -> Str
         .find(|pair| pair[0] == "--audio-quality")
         .map(|pair| pair[1].to_string());
 
-    match (container, quality) {
+    let base = match (container, quality) {
         (Some(container), Some(quality)) => format!("{container} · {quality}"),
         (Some(container), None) => format!("{} · {container}", label.to_lowercase()),
         (None, _) => label.to_lowercase(),
+    };
+    if let Some(sec) = &job.options.download_sections {
+        let clean = sec.strip_prefix('*').unwrap_or(sec);
+        format!("{base} · [{clean}]")
+    } else {
+        base
     }
 }
 

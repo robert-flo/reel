@@ -105,6 +105,10 @@ pub struct App {
     /// YouTube son gigabytes, y encolarla por error cuesta ancho de banda y
     /// disco, no un clic.
     pub confirmar_lista: Option<u64>,
+    /// Recorte de fragmento de tiempo (--download-sections).
+    pub clip_enabled: bool,
+    pub clip_start: String,
+    pub clip_end: String,
     /// Cuantos trabajos habia activos en el frame anterior. Sirve para avisar
     /// cuando la cola pasa de tener trabajo a estar quieta, y no en cada
     /// archivo: encolar diez avisaria diez veces.
@@ -196,6 +200,9 @@ impl App {
             probing: false,
             enqueue_when_probed: false,
             confirmar_lista: None,
+            clip_enabled: false,
+            clip_start: String::new(),
+            clip_end: String::new(),
             herramientas: Herramientas::default(),
             activos_antes: 0,
             paste_requested: false,
@@ -458,6 +465,9 @@ impl App {
                     self.preview_error = None;
                     self.probing = false;
                     self.confirmar_lista = None;
+                    self.clip_enabled = false;
+                    self.clip_start.clear();
+                    self.clip_end.clear();
                 } else if !self.queue_search.is_empty() {
                     self.queue_search.clear();
                 } else if !self.url.is_empty() {
@@ -816,6 +826,10 @@ impl App {
         let es_lista = media.playlist_count.is_some();
         let mut options = self.options.clone();
         options.playlist = es_lista;
+        if self.clip_enabled && !es_lista {
+            options.download_sections =
+                crate::backend::format_download_section(&self.clip_start, &self.clip_end);
+        }
 
         let id = {
             let mut queue = self
@@ -1696,5 +1710,29 @@ mod tests {
 
         let canceladas = app.cancel_active_jobs();
         assert_eq!(canceladas, 2);
+    }
+
+    #[test]
+    fn enqueue_con_recorte_aplica_download_sections() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.preview_url = Some("https://test.com/v".into());
+        app.preview = Some(crate::backend::Media {
+            title: "Video prueba".into(),
+            ..Default::default()
+        });
+        app.clip_enabled = true;
+        app.clip_start = "01:30".into();
+        app.clip_end = "03:45".into();
+
+        app.enqueue_preview();
+
+        let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(queue.jobs.len(), 1);
+        assert_eq!(
+            queue.jobs[0].options.download_sections.as_deref(),
+            Some("*01:30-03:45")
+        );
     }
 }
