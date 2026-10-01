@@ -115,6 +115,8 @@ pub struct Options {
     pub cookies_from_browser: Option<String>,
     pub output_dir: Option<std::path::PathBuf>,
     pub filename_template: Option<String>,
+    /// `--limit-rate`: limite maximo de descarga (ej: "5M", "1M", "500K").
+    pub rate_limit: Option<String>,
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
@@ -138,6 +140,7 @@ impl Default for Options {
             cookies_from_browser: None,
             output_dir: None,
             filename_template: None,
+            rate_limit: None,
             playlist: false,
             force: false,
         }

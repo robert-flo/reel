@@ -71,6 +71,8 @@ pub struct App {
     pub url: String,
     /// Filtro de la cola para ver todas, solo activas, terminadas o falladas.
     pub queue_filter: QueueFilter,
+    /// Texto de busqueda para filtrar la cola por titulo o enlace.
+    pub queue_search: String,
     /// El formato elegido para el proximo trabajo. Lo demas sale de `settings`.
     pub options: Options,
     /// Lo que dura entre arranques: carpeta, plantilla, cookies y tema.
@@ -178,6 +180,7 @@ impl App {
         let mut app = Self {
             url: String::new(),
             queue_filter: QueueFilter::default(),
+            queue_search: String::new(),
             options: Options::default(),
             settings: settings.clone(),
             draft: settings.clone(),
@@ -234,6 +237,10 @@ impl App {
             (!browser.is_empty()).then(|| browser.to_string())
         };
         self.options.subtitles = self.settings.subtitle_languages();
+        self.options.rate_limit = {
+            let limit = self.settings.rate_limit.trim();
+            (!limit.is_empty()).then(|| limit.to_string())
+        };
     }
 
     /// Abre el panel con una copia fresca de lo guardado, para que un borrador
@@ -419,6 +426,8 @@ impl App {
                     self.preview_error = None;
                     self.probing = false;
                     self.confirmar_lista = None;
+                } else if !self.queue_search.is_empty() {
+                    self.queue_search.clear();
                 } else if !self.url.is_empty() {
                     self.url.clear();
                 }
@@ -851,8 +860,8 @@ impl App {
         }
     }
 
-    /// Reintenta todo lo que no este andando. Sirve cuando se cae la red y
-    /// fallan varios de una: no hay que ir uno por uno.
+    /// Reintenta todos los trabajos que fallaron o se cancelaron. No toca los
+    /// que ya terminaron bien, evitando descargas redundantes.
     pub fn retry_failed(&mut self) -> usize {
         let pedidos: Vec<(u64, String, Options)> = {
             let mut queue = self
@@ -863,7 +872,12 @@ impl App {
             let ids: Vec<u64> = queue
                 .jobs
                 .iter()
-                .filter(|job| !job.is_active())
+                .filter(|job| {
+                    matches!(
+                        job.state,
+                        crate::backend::State::Failed { .. } | crate::backend::State::Cancelled
+                    )
+                })
                 .map(|job| job.id)
                 .collect();
             ids.into_iter()
@@ -1420,5 +1434,104 @@ mod tests {
         assert_eq!(q.jobs[0].url, "https://ejemplo.test/video1");
         assert_eq!(q.jobs[1].url, "https://ejemplo.test/video2");
         assert_eq!(q.jobs[2].url, "https://ejemplo.test/video3");
+    }
+
+    #[test]
+    fn retry_failed_no_reintenta_terminadas() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        let (id_done, id_failed, id_cancelled) = {
+            let mut q = app.backend.queue.lock().unwrap();
+            let j1 = q.push_ready(
+                "https://ejemplo.test/done".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(j1).unwrap().state = crate::backend::State::Done {
+                path: "/tmp/fake.mp4".into(),
+            };
+
+            let j2 = q.push_ready(
+                "https://ejemplo.test/fail".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(j2).unwrap().state = crate::backend::State::Failed {
+                reason: "error de red".into(),
+            };
+
+            let j3 = q.push_ready(
+                "https://ejemplo.test/cancel".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(j3).unwrap().state = crate::backend::State::Cancelled;
+
+            (j1, j2, j3)
+        };
+
+        // Reintentar fallidas solo debe tomar las 2 con error o canceladas
+        let reintentadas = app.retry_failed();
+        assert_eq!(reintentadas, 2);
+
+        let q = app.backend.queue.lock().unwrap();
+        assert!(matches!(
+            q.jobs.iter().find(|j| j.id == id_done).unwrap().state,
+            crate::backend::State::Done { .. }
+        ));
+        assert_eq!(
+            q.jobs.iter().find(|j| j.id == id_failed).unwrap().state,
+            crate::backend::State::Queued
+        );
+        assert_eq!(
+            q.jobs.iter().find(|j| j.id == id_cancelled).unwrap().state,
+            crate::backend::State::Queued
+        );
+    }
+
+    #[test]
+    fn limite_de_velocidad_en_ajustes() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        assert_eq!(app.options.rate_limit, None);
+
+        app.settings.rate_limit = "5M".into();
+        app.settings_changed();
+
+        assert_eq!(app.options.rate_limit, Some("5M".into()));
+
+        app.settings.rate_limit = "   ".into();
+        app.settings_changed();
+
+        assert_eq!(app.options.rate_limit, None);
+    }
+
+    #[test]
+    fn busqueda_en_cola_y_limpieza_con_escape() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+
+        app.queue_search = "tutorial".into();
+        assert_eq!(app.queue_search, "tutorial");
+
+        // Al presionar Escape, debe limpiar la búsqueda
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        });
+
+        let mut out = ctx.run_ui(input, |ui| {
+            app.handle_shortcuts(ui);
+        });
+        out.textures_delta.clear();
+
+        assert_eq!(app.queue_search, "");
     }
 }

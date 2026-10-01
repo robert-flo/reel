@@ -89,6 +89,18 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   tanto al portapapeles de la interfaz como al del sistema operativo (`wl-copy`).
 - **Vista previa completa de títulos**: pasar el cursor sobre cualquier título
   recortado en la ficha o en las filas de la cola muestra el nombre completo en un tooltip.
+- **Límite de velocidad configurable (`--limit-rate`)**: ajuste persistente para limitar el
+  ancho de banda de yt-dlp con botones rápidos (`sin límite`, `1 MB/s`, `2 MB/s`, `5 MB/s`, `10 MB/s`)
+  o cualquier valor personalizado (ej. `500K`, `3M`), ideal para no saturar la red durante videollamadas o juegos.
+- **Plantillas predefinidas de nombres de archivo**: botones de un toque en ajustes para
+  cambiar entre los esquemas de nombrado más frecuentes (`estándar`, `con canal/autor`, `numerado`,
+  `fecha y título`) sin tener que consultar la documentación de yt-dlp.
+- **Buscador interactivo en la cola**: cuando hay más de tres descargas, la cabecera muestra
+  un campo de búsqueda para filtrar la lista en tiempo real por título o URL; se limpia al instante
+  con un clic en la cruz o pulsando `Escape`.
+- **Velocidad acumulada y reintento inteligente**: la cabecera muestra la velocidad global
+  de descarga sumando todos los procesos activos (`· 4.2 MB/s`); y el botón `reintentar fallidas (N)`
+  únicamente relanza las descargas fallidas o canceladas, sin reencolar las que ya se completaron.
 
 ### Falta
 
@@ -210,8 +222,8 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
   en disco.
 - **Reintentar** vuelve a pedir el trabajo con los mismos argumentos, que es lo
   que hace que yt-dlp **reanude** el `.part` en vez de empezar de cero. Esta en
-  cada fila terminada y, cuando hay varios, como `reintentar todo` en la
-  cabecera: es lo que uno quiere despues de que se caiga la red.
+  cada fila terminada y, en la cabecera, como **reintentar fallidas (N)**: relanza
+  exclusivamente las descargas fallidas o canceladas sin tocar las que ya terminaron.
 
   Un detalle que conviene saber: yt-dlp **no vuelve a bajar** un archivo que ya
   esta en la carpeta de salida, ni siquiera al reintentar. Para el caso normal
@@ -235,6 +247,10 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
 - **Filtros rápidos** (`todas`, `activas`, `listas`, `con error`) aparecen en la
   cabecera cuando hay más de una descarga en curso, permitiendo aislar
   rápidamente las fallidas o las que están bajando.
+- **Velocidad global en vivo**: cuando hay descargas activas, la cabecera muestra
+  la velocidad acumulada total en tiempo real (`· X.X MB/s`).
+- **Buscador interactivo**: si la cola supera los tres elementos, aparece una caja
+  de búsqueda rápida en la cabecera para filtrar por palabras clave del título o URL.
 
 ### Cuantos a la vez
 
@@ -254,7 +270,11 @@ elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
   pegado, pero tambien es un ajuste: el que queda es el que arranca la proxima
   vez, en vez de volver siempre a `Mejor`.
 - **Nombre del archivo**: la plantilla de `-o` de yt-dlp. Vacia usa
-  `%(title).120s.%(ext)s`.
+  `%(title).120s.%(ext)s`. Incluye botones rápidos para esquemas estándar,
+  con autor/canal, numerado para listas o fecha y título.
+- **Límite de velocidad**: `--limit-rate` para acotar el consumo de banda ancha
+  (botones rápidos para `sin límite`, `1 MB/s`, `2 MB/s`, `5 MB/s`, `10 MB/s`
+  o cualquier valor como `500K` o `3M`).
 - **Subtitulos**: los idiomas que se bajan y se incrustan. Los comunes (`es`,
   `en`, `pt`, `fr`) son un toque y los demas se escriben a mano como `de, it`,
   que es lo que termina en `--sub-langs`.

@@ -26,6 +26,9 @@ pub struct Settings {
     /// Idiomas de subtitulos. Vacio es apagado.
     #[serde(default)]
     pub subtitles: Vec<String>,
+    /// Limite de velocidad para `--limit-rate`. Vacio es sin limite (ej: "5M", "1M").
+    #[serde(default)]
+    pub rate_limit: String,
     /// Archivo de paleta elegido. `None` es seguir el tema del escritorio.
     pub theme: Option<String>,
 }

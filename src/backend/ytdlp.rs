@@ -616,6 +616,10 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         args.push("--cookies-from-browser".into());
         args.push(browser.clone());
     }
+    if let Some(rate_limit) = &options.rate_limit {
+        args.push("--limit-rate".into());
+        args.push(rate_limit.clone());
+    }
     args.push(url.into());
 
     (args, dir)
@@ -1262,6 +1266,17 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--write-auto-subs"));
         assert!(args.iter().any(|arg| arg == "--embed-subs"));
         assert!(args.iter().any(|arg| arg == "es,en"));
+    }
+
+    #[test]
+    fn la_descarga_lleva_limite_de_velocidad() {
+        let options = Options {
+            rate_limit: Some("5M".into()),
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--limit-rate"));
+        assert!(args.iter().any(|arg| arg == "5M"));
     }
 
     #[test]

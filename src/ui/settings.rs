@@ -49,6 +49,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
             ui.add_space(16.0);
             filename(ui, app, &palette);
             ui.add_space(16.0);
+            rate_limit(ui, app, &palette);
+            ui.add_space(16.0);
             subtitles(ui, app, &palette);
             ui.add_space(16.0);
             cookies(ui, app, &palette);
@@ -73,10 +75,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
 fn commit(app: &mut App) {
     let changed = app.settings.output_dir != app.draft.output_dir
         || app.settings.filename_template != app.draft.filename_template
+        || app.settings.rate_limit != app.draft.rate_limit
         || app.settings.subtitle_list() != app.draft_subtitles;
     if changed {
         app.settings.output_dir = app.draft.output_dir.clone();
         app.settings.filename_template = app.draft.filename_template.clone();
+        app.settings.rate_limit = app.draft.rate_limit.clone();
         app.settings.set_subtitles(&app.draft_subtitles.clone());
         app.settings_changed();
     }
@@ -189,6 +193,28 @@ fn format(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
 fn filename(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
     section(ui, "NOMBRE DEL ARCHIVO", palette);
 
+    let mut nuevo_template = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let presets = [
+            ("estandar", crate::backend::DEFAULT_TEMPLATE),
+            ("con canal/autor", "%(uploader)s - %(title)s.%(ext)s"),
+            ("numerado", "%(playlist_index)02d - %(title)s.%(ext)s"),
+            ("fecha y titulo", "%(upload_date)s - %(title)s.%(ext)s"),
+        ];
+        for (label, tmpl) in presets {
+            let activo = app.draft.filename_template.trim() == tmpl;
+            if chip(ui, label, activo, palette).clicked() {
+                nuevo_template = Some(tmpl.to_string());
+            }
+        }
+    });
+    if let Some(tmpl) = nuevo_template {
+        app.draft.filename_template = tmpl;
+        commit(app);
+    }
+
+    ui.add_space(8.0);
     let field = ui.add(
         egui::TextEdit::singleline(&mut app.draft.filename_template)
             .hint_text(text(
@@ -208,6 +234,56 @@ fn filename(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette)
     hint(
         ui,
         "plantilla de yt-dlp; vacia usa %(title).120s.%(ext)s",
+        palette.dim,
+    );
+}
+
+/// Limite maximo de velocidad de bajada para yt-dlp (--limit-rate).
+fn rate_limit(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+    section(ui, "LIMITE DE VELOCIDAD", palette);
+
+    let mut nuevo_limite = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let presets = [
+            ("", "sin limite"),
+            ("1M", "1 MB/s"),
+            ("2M", "2 MB/s"),
+            ("5M", "5 MB/s"),
+            ("10M", "10 MB/s"),
+        ];
+        for (valor, etiqueta) in presets {
+            let activo = app.draft.rate_limit.trim() == valor;
+            if chip(ui, etiqueta, activo, palette).clicked() {
+                nuevo_limite = Some(valor.to_string());
+            }
+        }
+    });
+    if let Some(limite) = nuevo_limite {
+        app.draft.rate_limit = limite;
+        commit(app);
+    }
+
+    ui.add_space(8.0);
+    let field = ui.add(
+        egui::TextEdit::singleline(&mut app.draft.rate_limit)
+            .hint_text(text(
+                "o escribe un valor (ej: 500K, 3M)",
+                12.0,
+                Weight::Regular,
+                palette.dim,
+            ))
+            .font(Weight::Regular.font_id(12.0))
+            .margin(egui::Margin::symmetric(12, 8))
+            .desired_width(FIELD_WIDTH),
+    );
+    if field.lost_focus() {
+        commit(app);
+    }
+
+    hint(
+        ui,
+        "limita el ancho de banda usado por yt-dlp para no saturar tu conexion",
         palette.dim,
     );
 }

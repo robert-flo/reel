@@ -27,12 +27,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         (queue.jobs.clone(), queue.active(), queue.done(), failed)
     };
 
-    // Los que ya terminaron se pueden volver a pedir, y al reintentar se
-    // reanuda lo que haya quedado a medias.
-    let retryable = jobs.iter().filter(|job| !job.is_active()).count();
+    // Trabajos inactivos y con error/cancelados para las acciones de cabecera.
+    let inactive = jobs.iter().filter(|job| !job.is_active()).count();
+    let failed_or_cancelled = jobs
+        .iter()
+        .filter(|job| matches!(job.state, State::Failed { .. } | State::Cancelled))
+        .count();
+    let total_speed: f64 = jobs
+        .iter()
+        .filter(|j| j.is_active())
+        .filter_map(|j| j.speed)
+        .sum();
 
     ui.horizontal(|ui| {
         ui.label(text("COLA", 11.0, Weight::SemiBold, palette.dim));
+        if total_speed > 0.0 {
+            ui.add_space(4.0);
+            ui.label(text(
+                format!("· {}", crate::ui::human_speed(total_speed)),
+                11.0,
+                Weight::SemiBold,
+                palette.accent,
+            ));
+        }
 
         if jobs.len() > 1 {
             ui.add_space(8.0);
@@ -83,12 +100,33 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
         }
 
+        if jobs.len() > 3 {
+            ui.add_space(6.0);
+            let search_edit = egui::TextEdit::singleline(&mut app.queue_search)
+                .hint_text(text("buscar...", 11.0, Weight::Regular, palette.dim))
+                .font(Weight::Regular.font_id(11.0))
+                .margin(egui::Margin::symmetric(6, 2))
+                .desired_width(110.0);
+            ui.add(search_edit);
+            if !app.queue_search.is_empty() {
+                let hit_x = ui
+                    .add(
+                        egui::Label::new(text("×", 12.0, Weight::SemiBold, palette.dim))
+                            .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if hit_x.clicked() {
+                    app.queue_search.clear();
+                }
+            }
+        }
+
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if retryable > 0 {
+            if failed_or_cancelled > 0 {
                 let hit_reintentar = ui
                     .add(
                         egui::Label::new(text(
-                            format!("reintentar todo ({retryable})"),
+                            format!("reintentar fallidas ({failed_or_cancelled})"),
                             11.0,
                             Weight::Regular,
                             palette.dim,
@@ -99,8 +137,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if hit_reintentar.clicked() {
                     reintentar_todo = Some(());
                 }
-
                 ui.add_space(10.0);
+            }
+
+            if inactive > 0 {
                 let hit_limpiar = ui
                     .add(
                         egui::Label::new(text(
@@ -151,13 +191,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let mut actions = RowActions::default();
 
+    let query = app.queue_search.trim().to_lowercase();
     let visible_jobs: Vec<&crate::backend::Job> = jobs
         .iter()
-        .filter(|job| match app.queue_filter {
-            QueueFilter::All => true,
-            QueueFilter::Active => job.is_active(),
-            QueueFilter::Done => matches!(job.state, State::Done { .. }),
-            QueueFilter::Failed => matches!(job.state, State::Failed { .. }),
+        .filter(|job| {
+            let matches_filter = match app.queue_filter {
+                QueueFilter::All => true,
+                QueueFilter::Active => job.is_active(),
+                QueueFilter::Done => matches!(job.state, State::Done { .. }),
+                QueueFilter::Failed => matches!(job.state, State::Failed { .. }),
+            };
+            let matches_query = query.is_empty()
+                || job.media.title.to_lowercase().contains(&query)
+                || job.url.to_lowercase().contains(&query);
+            matches_filter && matches_query
         })
         .collect();
 
@@ -167,13 +214,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             if visible_jobs.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(28.0);
-                    let msg = match app.queue_filter {
-                        QueueFilter::Active => "no hay descargas activas",
-                        QueueFilter::Done => "no hay descargas terminadas",
-                        QueueFilter::Failed => "no hay descargas con error",
-                        QueueFilter::All => "la cola esta vacia",
+                    let msg = if !query.is_empty() {
+                        format!("ninguna descarga coincide con \"{query}\"")
+                    } else {
+                        match app.queue_filter {
+                            QueueFilter::Active => "no hay descargas activas".into(),
+                            QueueFilter::Done => "no hay descargas terminadas".into(),
+                            QueueFilter::Failed => "no hay descargas con error".into(),
+                            QueueFilter::All => "la cola esta vacia".into(),
+                        }
                     };
-                    ui.label(text(msg, 12.0, Weight::Regular, palette.dim));
+                    ui.label(text(&msg, 12.0, Weight::Regular, palette.dim));
+                    if !query.is_empty() {
+                        ui.add_space(8.0);
+                        let hit_clear = ui
+                            .add(
+                                egui::Label::new(text(
+                                    "limpiar busqueda",
+                                    11.0,
+                                    Weight::Medium,
+                                    palette.accent,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_clear.clicked() {
+                            app.queue_search.clear();
+                        }
+                    }
                 });
             } else {
                 for job in visible_jobs {
