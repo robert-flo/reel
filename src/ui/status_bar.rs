@@ -9,17 +9,17 @@ use crate::app::{App, UpdateState};
 use super::widgets::{caption, text};
 use super::Metrics;
 
-pub fn show(app: &mut App, ctx: &egui::Context) {
+pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
 
-    egui::TopBottomPanel::bottom("status-bar")
+    egui::Panel::bottom("status-bar")
         .exact_height(Metrics::STATUS_BAR)
         .frame(
             egui::Frame::new()
                 .fill(palette.window)
                 .inner_margin(egui::Margin::symmetric(Metrics::GUTTER as i8, 0)),
         )
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.label(caption(app.output_dir_label(), &palette));
 

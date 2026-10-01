@@ -25,7 +25,10 @@ pub const UPDATES: UpdateConfig = UpdateConfig {
     )
 };
 
-fn updater() -> anyhow::Result<Updater<ReqwestTransport>> {
+/// `Updater` guarda el transporte detras de un objeto, asi que no lleva
+/// parametro de tipo. El cliente de reqwest es nuestro: de ahi salen el
+/// proxy y el TLS de la app.
+fn updater() -> anyhow::Result<Updater> {
     let transport = ReqwestTransport::new(reqwest_builder())?;
     Ok(Updater::new(UPDATES, transport))
 }
@@ -33,7 +36,6 @@ fn updater() -> anyhow::Result<Updater<ReqwestTransport>> {
 fn reqwest_builder() -> reqwest::blocking::ClientBuilder {
     reqwest::blocking::Client::builder()
         .user_agent(concat!("reel/", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::none())
 }
 
 /// Revisa una vez, en un hilo aparte. La app decide cuando llamarlo; el
@@ -44,7 +46,7 @@ pub fn check(tx: Sender<UpdateMessage>) {
 
         let state = match updater().and_then(|updater| Ok(updater.check()?)) {
             Ok(Some(release)) => UpdateState::Available {
-                version: release.version().to_string(),
+                version: release.version.clone(),
             },
             Ok(None) => UpdateState::Idle,
             Err(error) => UpdateState::Failed(format!("no pude revisar: {error}")),

@@ -22,11 +22,19 @@ struct Window {
 }
 
 impl eframe::App for Window {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    // `logic` corre antes de dibujar y recibe el Context: es donde van las
+    // cosas de ventana, no de interfaz.
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if !std::mem::replace(&mut self.recovery_checked, true) {
             fastframe_shell::window::recover_offscreen(ctx, frame);
         }
-        self.app.frame(ctx);
+        self.app.tick(ctx);
+    }
+
+    // En egui 0.36 la app recibe un `Ui` raiz y los paneles se muestran
+    // dentro de el, en vez de colgar del Context.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.app.ui(ui);
     }
 }
 
@@ -51,7 +59,7 @@ fn main() -> anyhow::Result<()> {
 
     let waker = fastframe_shell::Waker::default();
     let mut app = App::new(&waker);
-    app.start_themes(&waker);
+    app.start_themes();
     app.check_updates();
 
     if let Some(receipt) = launch.receipt {
@@ -74,7 +82,9 @@ fn main() -> anyhow::Result<()> {
                     }))
                 }),
             )
-        })?;
+        })
+        // eframe::Error no es Send + Sync, asi que anyhow no lo acepta con `?`.
+        .map_err(|error| anyhow::anyhow!("no pude abrir la ventana: {error}"))?;
 
     Ok(())
 }

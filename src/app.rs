@@ -8,7 +8,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use fastframe_theme::{Catalog, DesktopThemes, Transition, Waker as ThemeWaker};
 
-use crate::backend::{Backend, Command, Media, Options, State};
+use crate::backend::{Backend, Command, Media, Options};
 use crate::palette::Palette;
 use crate::ui;
 
@@ -43,6 +43,7 @@ pub struct App {
     pub themes: Catalog<Palette>,
     pub transition: Transition,
     pub selected_theme: Option<String>,
+    theme_waker: ThemeWaker,
 
     pub update: UpdateState,
     update_rx: Receiver<UpdateMessage>,
@@ -90,6 +91,10 @@ impl App {
         };
 
         let palette = Palette::dark();
+        let theme_waker = {
+            let waker = waker.clone();
+            ThemeWaker::new(move || waker.wake())
+        };
 
         Self {
             url: String::new(),
@@ -101,6 +106,7 @@ impl App {
             themes: Catalog::default(),
             transition: Transition::default(),
             selected_theme: None,
+            theme_waker,
             update: UpdateState::Idle,
             update_rx,
             update_tx,
@@ -118,7 +124,7 @@ impl App {
     /// Arranca el catalogo de temas: los archivos del usuario, las ocho
     /// paletas compartidas, y el tema de Omarchy en vivo cuando el escritorio
     /// esta ahi.
-    pub fn start_themes(&mut self, waker: &fastframe_shell::Waker) {
+    pub fn start_themes(&mut self) {
         self.themes.enable_desktop_themes(DesktopThemes {
             slug: SLUG,
             omarchy_template: include_str!("../contrib/omarchy/reel.json.tpl"),
@@ -126,12 +132,17 @@ impl App {
             presets: true,
         });
 
-        let waker = waker.clone();
-        let theme_waker = ThemeWaker::new(move || waker.wake());
+        self.rescan_themes();
+    }
+
+    /// Pide al catalogo que liste el directorio otra vez. El resultado llega
+    /// por `poll` en el siguiente frame.
+    fn rescan_themes(&mut self) {
+        let waker = self.theme_waker.clone();
         self.themes.start(
             crate::dirs::config_dir().join("themes"),
             self.selected_theme.clone(),
-            &theme_waker,
+            &waker,
         );
     }
 
@@ -140,7 +151,7 @@ impl App {
         egui_extras::install_image_loaders(ctx);
         crate::icon::install(ctx);
         self.apply_palette(ctx, self.palette);
-        if let Some(tray) = &self.tray {
+        if let Some(tray) = &mut self.tray {
             tray.attach();
         }
     }
@@ -154,12 +165,18 @@ impl App {
         ctx.all_styles_mut(|style| rendering.apply_to_visuals(&mut style.visuals));
     }
 
-    /// Un frame completo. Lo llama la ventana y, sin ventana, el shell.
-    pub fn frame(&mut self, ctx: &egui::Context) {
+    /// Lo que no dibuja: eventos, temas, tray, actualizador. Corre antes de
+    /// cada frame y tambien sin ventana abierta.
+    pub fn tick(&mut self, ctx: &egui::Context) {
         self.pump(ctx);
+    }
 
-        ui::top_bar::show(self, ctx);
-        ui::status_bar::show(self, ctx);
+    /// El frame. En egui 0.36 la app recibe el `Ui` raiz y los paneles se
+    /// muestran dentro de el: primero los de los bordes, el central de
+    /// ultimo.
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        ui::top_bar::show(self, ui);
+        ui::status_bar::show(self, ui);
 
         egui::CentralPanel::default()
             .frame(
@@ -170,7 +187,7 @@ impl App {
                         ui::Metrics::GUTTER as i8,
                     )),
             )
-            .show(ctx, |cui| {
+            .show(ui, |cui| {
                 ui::url_bar::show(self, cui);
                 cui.add_space(ui::Metrics::GAP);
                 if self.preview.is_some() {
@@ -182,7 +199,7 @@ impl App {
 
         // La revelacion de colores desde el centro, como hace Omarchy. Va de
         // ultimo en el frame, siempre.
-        self.transition.paint(ctx);
+        self.transition.paint(ui.ctx());
     }
 
     /// Lo que corre con o sin ventana: eventos del backend, del tray, del
@@ -251,15 +268,23 @@ impl App {
         }
     }
 
+    /// El catalogo avisa con `needs_reload` que un archivo cambio; el escaneo
+    /// se pide con `start` y sus resultados llegan por `poll`.
     fn reload_themes(&mut self) {
-        self.themes.reload();
-        self.resolve_palette();
+        self.rescan_themes();
     }
 
+    /// El tema elegido por nombre de archivo; si no hay eleccion, el del
+    /// escritorio; si tampoco, el oscuro de la app.
     fn resolve_palette(&mut self) {
-        self.wanted_palette = self
-            .themes
-            .resolve(self.selected_theme.as_deref())
+        let chosen = self
+            .selected_theme
+            .as_deref()
+            .and_then(|filename| self.themes.find(filename))
+            .or_else(|| self.themes.system_theme());
+
+        self.wanted_palette = chosen
+            .map(|theme| theme.palette.clone())
             .unwrap_or_else(Palette::dark);
     }
 
@@ -326,9 +351,12 @@ impl App {
     }
 
     pub fn theme_label(&self) -> String {
-        if self.themes.follows_omarchy() {
-            match self.themes.omarchy_theme_name() {
-                Some(name) => format!("tema: siguiendo omarchy ({name})"),
+        if self.themes.follows_omarchy() && self.selected_theme.is_none() {
+            match self.themes.system_theme() {
+                Some(theme) => format!(
+                    "tema: siguiendo omarchy ({})",
+                    fastframe_theme::display_name(&theme.filename)
+                ),
                 None => "tema: siguiendo omarchy".into(),
             }
         } else {

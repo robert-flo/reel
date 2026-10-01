@@ -8,17 +8,17 @@ use crate::app::App;
 use super::widgets::text;
 use super::Metrics;
 
-pub fn show(app: &mut App, ctx: &egui::Context) {
+pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
 
-    egui::TopBottomPanel::top("top-bar")
+    egui::Panel::top("top-bar")
         .exact_height(Metrics::TOP_BAR)
         .frame(
             egui::Frame::new()
                 .fill(palette.panel)
                 .inner_margin(egui::Margin::symmetric(Metrics::GUTTER as i8, 0)),
         )
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.label(text("reel", 15.0, Weight::Bold, palette.text));
                 ui.add_space(8.0);

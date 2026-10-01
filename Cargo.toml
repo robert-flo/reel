@@ -23,6 +23,9 @@ fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2",
 
 anyhow = "1"
 log = "0.4"
+# El cliente del actualizador lo construye la app, no la crate: aqui se
+# eligen TLS y proxy. fastframe-update solo lo envuelve en su Transport.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "6"
