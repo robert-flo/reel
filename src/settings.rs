@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
 use crate::dirs;
 use crate::i18n::Language;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Vacio significa la carpeta del sistema: Videos o Music segun el
@@ -33,11 +37,39 @@ pub struct Settings {
     /// Quitar patrocinios en videos via SponsorBlock (--sponsorblock-remove sponsor).
     #[serde(default)]
     pub sponsorblock: bool,
+    /// Incrustar capitulos del video cuando existan (--embed-chapters).
+    #[serde(default = "default_true")]
+    pub chapters: bool,
+    /// Incrustar metadatos y caratula (--embed-metadata y --embed-thumbnail).
+    #[serde(default = "default_true")]
+    pub metadata: bool,
+    /// Argumentos adicionales pasados directamente a yt-dlp (ej: "--proxy ...").
+    #[serde(default)]
+    pub extra_args: String,
     /// Archivo de paleta elegido. `None` es seguir el tema del escritorio.
     pub theme: Option<String>,
     /// Idioma de la interfaz. Vacio o desconocido es ingles.
     #[serde(default)]
     pub language: Language,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            output_dir: String::new(),
+            filename_template: String::new(),
+            format_id: String::new(),
+            cookies_browser: String::new(),
+            subtitles: Vec::new(),
+            rate_limit: String::new(),
+            sponsorblock: false,
+            chapters: true,
+            metadata: true,
+            extra_args: String::new(),
+            theme: None,
+            language: Language::default(),
+        }
+    }
 }
 
 impl Settings {
@@ -364,5 +396,24 @@ mod tests {
 
         let sin_campo: Settings = serde_json::from_str("{}").expect("default");
         assert_eq!(sin_campo.language, Language::En);
+    }
+
+    #[test]
+    fn defaults_de_capitulos_metadatos_y_extra_args() {
+        let settings = Settings::default();
+        assert!(settings.chapters);
+        assert!(settings.metadata);
+        assert_eq!(settings.extra_args, "");
+
+        let vacio: Settings = serde_json::from_str("{}").expect("default");
+        assert!(vacio.chapters);
+        assert!(vacio.metadata);
+        assert_eq!(vacio.extra_args, "");
+
+        let json = r#"{"chapters": false, "metadata": false, "extra_args": "--geo-bypass"}"#;
+        let loaded: Settings = serde_json::from_str(json).expect("deserializar");
+        assert!(!loaded.chapters);
+        assert!(!loaded.metadata);
+        assert_eq!(loaded.extra_args, "--geo-bypass");
     }
 }

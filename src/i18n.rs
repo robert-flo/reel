@@ -121,6 +121,7 @@ i18n_strings! {
     search_hint: { en: "search...", es: "buscar..." }
     retry_failed: { en: "retry failed", es: "reintentar fallidas" }
     clear_finished: { en: "clear finished", es: "limpiar terminadas" }
+    cancel_active: { en: "cancel active", es: "cancelar activas" }
     active_one: { en: "active", es: "activa" }
     active_many: { en: "active", es: "activas" }
     completed_one: { en: "completed", es: "completada" }
@@ -146,6 +147,7 @@ i18n_strings! {
     retry: { en: "retry", es: "reintentar" }
     redownload: { en: "download again", es: "volver a bajar" }
     copy_path: { en: "copy path", es: "copiar ruta" }
+    copy_url: { en: "copy link", es: "copiar enlace" }
     folder: { en: "folder", es: "carpeta" }
     open: { en: "open", es: "abrir" }
     open_folder: { en: "open folder", es: "abrir carpeta" }
@@ -161,9 +163,15 @@ i18n_strings! {
     section_format: { en: "FORMAT", es: "FORMATO" }
     section_filename: { en: "FILE NAME", es: "NOMBRE DEL ARCHIVO" }
     section_rate: { en: "SPEED LIMIT", es: "LÍMITE DE VELOCIDAD" }
-    section_sponsorblock: { en: "SPONSORBLOCK", es: "SPONSORBLOCK" }
+    section_extras: { en: "EXTRAS", es: "EXTRAS" }
     sponsorblock_toggle: { en: "remove sponsor segments", es: "quitar patrocinios" }
     sponsorblock_hint: { en: "automatically cut out sponsored segments in YouTube videos", es: "corta automáticamente los segmentos patrocinados en videos de YouTube" }
+    chapters_toggle: { en: "embed chapters", es: "incrustar capítulos" }
+    chapters_hint: { en: "adds chapter markers to video files when available", es: "agrega marcas de capítulos en el video si están disponibles" }
+    metadata_toggle: { en: "embed metadata & cover", es: "incrustar metadatos y carátula" }
+    metadata_hint: { en: "adds tags, description, and cover art to the file", es: "agrega etiquetas, descripción y carátula al archivo" }
+    section_advanced: { en: "ADVANCED", es: "AVANZADO" }
+    extra_args_hint: { en: "additional arguments passed to yt-dlp (e.g. --proxy socks5://...)", es: "argumentos adicionales pasados a yt-dlp (ej.: --proxy socks5://...)" }
     section_subtitles: { en: "SUBTITLES", es: "SUBTÍTULOS" }
     section_cookies: { en: "BROWSER COOKIES", es: "COOKIES DEL NAVEGADOR" }
     section_theme: { en: "THEME", es: "TEMA" }

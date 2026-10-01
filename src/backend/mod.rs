@@ -109,6 +109,12 @@ pub const FORMATS: &[Format] = &[
         kind: Kind::Audio,
         args: &["-f", "ba/b", "-x", "--audio-format", "flac"],
     },
+    Format {
+        id: "wav",
+        label: "wav",
+        kind: Kind::Audio,
+        args: &["-f", "ba/b", "-x", "--audio-format", "wav"],
+    },
 ];
 
 /// La plantilla de nombre que usa la app cuando no se le dice otra. Vive aca y
@@ -136,6 +142,8 @@ pub struct Options {
     pub rate_limit: Option<String>,
     /// `--sponsorblock-remove sponsor`: quita segmentos de patrocinio en YouTube.
     pub sponsorblock: bool,
+    /// Argumentos adicionales que se le pasan directamente a yt-dlp (ej: "--proxy ...").
+    pub extra_args: Option<String>,
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
@@ -161,6 +169,7 @@ impl Default for Options {
             filename_template: None,
             rate_limit: None,
             sponsorblock: false,
+            extra_args: None,
             playlist: false,
             force: false,
         }

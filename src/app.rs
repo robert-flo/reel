@@ -261,6 +261,12 @@ impl App {
             (!limit.is_empty()).then(|| limit.to_string())
         };
         self.options.sponsorblock = self.settings.sponsorblock;
+        self.options.chapters = self.settings.chapters;
+        self.options.metadata = self.settings.metadata;
+        self.options.extra_args = {
+            let extra = self.settings.extra_args.trim();
+            (!extra.is_empty()).then(|| extra.to_string())
+        };
     }
 
     /// Abre el panel con una copia fresca de lo guardado, para que un borrador
@@ -932,6 +938,28 @@ impl App {
         queue.clear_finished()
     }
 
+    /// Cancela todas las descargas que se esten ejecutando o esperando en cola.
+    pub fn cancel_active_jobs(&mut self) -> usize {
+        let ids: Vec<u64> = {
+            let queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue
+                .jobs
+                .iter()
+                .filter(|job| job.is_active())
+                .map(|job| job.id)
+                .collect()
+        };
+        let count = ids.len();
+        for id in ids {
+            self.backend.send(crate::backend::Command::Cancel { id });
+        }
+        count
+    }
+
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
         // egui entrega el portapapeles por eventos; en Wayland tambien vale
         // `wl-paste`. Un solo lugar que cambiar cuando se decida cual.
@@ -1599,7 +1627,7 @@ mod tests {
     }
 
     #[test]
-    fn formatos_1440p_y_flac_disponibles() {
+    fn formatos_1440p_flac_y_wav_disponibles() {
         let waker = fastframe_shell::Waker::default();
         let mut app = App::new(&waker);
 
@@ -1608,16 +1636,65 @@ mod tests {
 
         app.select_format("flac");
         assert_eq!(app.options.format_id, "flac");
+
+        app.select_format("wav");
+        assert_eq!(app.options.format_id, "wav");
     }
 
     #[test]
-    fn sponsorblock_se_sincroniza() {
+    fn sponsorblock_y_extras_se_sincronizan() {
         let waker = fastframe_shell::Waker::default();
         let mut app = App::new(&waker);
 
         assert!(!app.options.sponsorblock);
+        assert!(app.options.chapters);
+        assert!(app.options.metadata);
+        assert_eq!(app.options.extra_args, None);
+
         app.settings.sponsorblock = true;
+        app.settings.chapters = false;
+        app.settings.metadata = false;
+        app.settings.extra_args = "--proxy socks5://127.0.0.1:9050".into();
         app.settings_changed();
+
         assert!(app.options.sponsorblock);
+        assert!(!app.options.chapters);
+        assert!(!app.options.metadata);
+        assert_eq!(
+            app.options.extra_args.as_deref(),
+            Some("--proxy socks5://127.0.0.1:9050")
+        );
+    }
+
+    #[test]
+    fn cancel_active_jobs_cancela_solo_activas() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        {
+            let mut queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue.push_ready(
+                "https://test.com/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            queue.push_ready(
+                "https://test.com/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            queue.push_ready(
+                "https://test.com/3".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            // Marcamos una como Done
+            queue.jobs[2].state = crate::backend::State::Done {
+                path: "/tmp/test".into(),
+            };
+        }
+
+        let canceladas = app.cancel_active_jobs();
+        assert_eq!(canceladas, 2);
     }
 }

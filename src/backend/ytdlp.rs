@@ -548,6 +548,45 @@ fn entrada_de_lista(json: &serde_json::Value) -> Option<Media> {
     })
 }
 
+/// Divide una cadena de argumentos respetando comillas simples y dobles.
+pub(crate) fn parse_extra_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes: Option<char> = None;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                } else {
+                    current.push('\\');
+                }
+            }
+            '"' | '\'' => {
+                if in_quotes == Some(ch) {
+                    in_quotes = None;
+                } else if in_quotes.is_none() {
+                    in_quotes = Some(ch);
+                } else {
+                    current.push(ch);
+                }
+            }
+            c if c.is_whitespace() && in_quotes.is_none() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
 /// Los argumentos de la descarga, en orden. Aparte de `run_job` para poder
 /// probarlos sin lanzar yt-dlp.
 pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathBuf) {
@@ -623,6 +662,11 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
     if options.sponsorblock && format.kind == Kind::Video {
         args.push("--sponsorblock-remove".into());
         args.push("sponsor".into());
+    }
+    if let Some(extra) = &options.extra_args {
+        for part in parse_extra_args(extra) {
+            args.push(part);
+        }
     }
     args.push(url.into());
 
@@ -1332,5 +1376,36 @@ mod tests {
         assert_eq!(media.title, "Un video");
         assert_eq!(media.duration, Some(120.0));
         assert_eq!(media.filesize, Some(1048576));
+    }
+
+    #[test]
+    fn parse_extra_args_respeta_comillas_y_espacios() {
+        let parsed = parse_extra_args("--proxy socks5://127.0.0.1:9050 --geo-bypass");
+        assert_eq!(
+            parsed,
+            vec!["--proxy", "socks5://127.0.0.1:9050", "--geo-bypass"]
+        );
+
+        let parsed_quotes =
+            parse_extra_args("--user-agent \"Mozilla 5.0\" --referer 'https://test'");
+        assert_eq!(
+            parsed_quotes,
+            vec!["--user-agent", "Mozilla 5.0", "--referer", "https://test"]
+        );
+
+        let parsed_vacio = parse_extra_args("   ");
+        assert!(parsed_vacio.is_empty());
+    }
+
+    #[test]
+    fn la_descarga_lleva_extra_args() {
+        let options = Options {
+            extra_args: Some("--geo-bypass --proxy socks5://127.0.0.1:9050".into()),
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--geo-bypass"));
+        assert!(args.iter().any(|arg| arg == "--proxy"));
+        assert!(args.iter().any(|arg| arg == "socks5://127.0.0.1:9050"));
     }
 }

@@ -17,6 +17,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let tr = app.tr();
     let mut reintentar_todo: Option<()> = None;
     let mut limpiar_terminadas = false;
+    let mut cancelar_activas = false;
 
     let (jobs, active, done, failed) = {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -124,6 +125,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if active > 1 {
+                let hit_cancelar = ui
+                    .add(
+                        egui::Label::new(text(
+                            format!("{} ({active})", tr.cancel_active),
+                            11.0,
+                            Weight::Regular,
+                            palette.dim,
+                        ))
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if hit_cancelar.clicked() {
+                    cancelar_activas = true;
+                }
+                ui.add_space(10.0);
+            }
+
             if failed_or_cancelled > 0 {
                 let hit_reintentar = ui
                     .add(
@@ -245,6 +264,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(()) = reintentar_todo {
         app.retry_failed();
+    }
+    if cancelar_activas {
+        app.cancel_active_jobs();
     }
     if limpiar_terminadas {
         app.clear_finished_jobs();
@@ -384,11 +406,29 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                     } else {
                         job.media.title.clone()
                     };
-                    ui.add(
+                    let es_listo = matches!(job.state, State::Done { .. });
+                    let mut title_label =
                         egui::Label::new(text(&title, 13.0, Weight::SemiBold, palette.text))
-                            .truncate(),
-                    )
-                    .on_hover_text(&title);
+                            .truncate();
+                    if es_listo {
+                        title_label = title_label.sense(egui::Sense::click());
+                    }
+                    let resp = ui.add(title_label).on_hover_text(&title);
+                    if es_listo {
+                        let resp = resp
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(tr.open);
+                        if resp.double_clicked() {
+                            if let State::Done { path } = &job.state {
+                                if Path::new(path).is_file() {
+                                    actions.abrir_archivo = Some(path.clone());
+                                } else {
+                                    actions.abrir_carpeta =
+                                        Some((path.clone(), job.options.output_dir.clone()));
+                                }
+                            }
+                        }
+                    }
                     ui.add_space(4.0);
                     ui.label(caption(job_format_label(job, tr), &palette));
                 });
@@ -540,6 +580,24 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit_copiar.clicked() {
                                     actions.copiar_texto = Some(reason.clone());
+                                }
+                                ui.add_space(10.0);
+                            }
+                            // Copiar enlace original del video/audio
+                            if !job.media.url.is_empty() {
+                                let hit_url = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            tr.copy_url,
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit_url.clicked() {
+                                    actions.copiar_texto = Some(job.media.url.clone());
                                 }
                                 ui.add_space(10.0);
                             }

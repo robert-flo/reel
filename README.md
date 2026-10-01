@@ -105,11 +105,22 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   únicamente relanza las descargas fallidas o canceladas, sin reencolar las que ya se completaron.
 - **Formatos 1440p (2K) y FLAC (Lossless)**: resoluciones de video hasta 1440p para monitores
   QHD modernos y formato de audio FLAC de alta fidelidad sin compresión con pérdidas.
+- **Formato de audio WAV**: extracción de audio sin compresión en formato `.wav` (PCM), pensado para edición de sonido, mezclas y producción musical.
 - **Integración con SponsorBlock**: opción para remover automáticamente segmentos de publicidad
   o patrocinios integrados en videos de YouTube (`--sponsorblock-remove sponsor`), seleccionable
   en la ficha del enlace o por defecto en los ajustes.
 - **Acceso rápido a la carpeta de descargas**: la ruta en la barra de estado inferior es interactiva;
   un clic abre directamente el directorio en el explorador de archivos del sistema.
+- **Cancelación masiva de descargas activas**: botón `cancelar activas (N)` en la cabecera para
+  interrumpir de un solo clic todas las descargas que estén bajando o en espera.
+- **Copiar enlace original**: acción `copiar enlace` en cada fila para copiar al portapapeles
+  la dirección web original del contenido.
+- **Doble clic para reproducir**: hacer doble clic sobre el título de cualquier descarga terminada
+  abre el archivo en el reproductor del sistema (`xdg-open`).
+- **Argumentos adicionales de yt-dlp**: campo avanzado en ajustes para pasar parámetros arbitrarios
+  (como `--proxy socks5://127.0.0.1:9050` o `--geo-bypass`).
+- **Persistencia de capítulos y metadatos**: la configuración predeterminada de incrustar capítulos
+  y carátula/etiquetas ahora se guarda en `settings.json` y se recuerda entre arranques.
 
 ### Falta
 
@@ -212,6 +223,7 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 | `m4a` | solo audio, en contenedor m4a (AAC nativo sin pérdida por recodificación) |
 | `opus` | solo audio, en opus |
 | `flac` | solo audio, compresión sin pérdida (FLAC lossless) |
+| `wav` | solo audio, sin compresión (PCM wav para producción y edición) |
 
 `metadatos + caratula` agrega los datos del video y la miniatura al archivo.
 `capitulos` los incrusta (solo video).
@@ -221,7 +233,7 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 sitio y las unen en mp4. Con YouTube eso suele dar **av1 de video y opus de
 audio**, que es lo mejor que hay pero no lo abre cualquier reproductor viejo.
 Si el archivo va a un televisor o a un telefono que no los soporte, elegi una
-altura concreta (`720p`) o bajalo en `mp3`, `m4a` o `flac`. Los subtitulos se bajan y se incrustan en
+altura concreta (`720p`) o bajalo en `mp3`, `m4a`, `flac` o `wav`. Los subtitulos se bajan y se incrustan en
 los idiomas que elijas en los ajustes (con fallback automático si solo hay
 subtítulos autogenerados).
 
@@ -248,12 +260,14 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
   reintento siguiente vuelve a ser normal, porque bajar de cero algo que ya
   esta bien seria tirar ancho de banda.
 - **Abrir** reproduce el archivo terminado directamente con el reproductor
-  predeterminado (`xdg-open`).
+  predeterminado (`xdg-open`). También puedes hacer **doble clic en el título** de la descarga.
 - **Carpeta** abre el directorio donde quedó el archivo. En las filas de
   resumen de listas de reproducción, abre la carpeta de salida configurada.
 - **Copiar ruta** copia la ruta absoluta del archivo descargado al portapapeles.
+- **Copiar enlace** copia la URL original del video o audio al portapapeles.
 - **Copiar error** copia el motivo de falla detallado reportado por yt-dlp/ffmpeg.
 - **Quitar** elimina la fila individual de la cola (para trabajos no activos).
+- **Cancelar activas** en la cabecera interrumpe y mata de un solo clic todas las descargas activas.
 - **Limpiar terminadas** en la cabecera remueve todas las descargas inactivas
   (listas, canceladas o falladas) de una sola vez.
 - **Filtros rápidos** (`todas`, `activas`, `listas`, `con error`) aparecen en la
@@ -293,6 +307,10 @@ elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
 - **Cookies del navegador**: `--cookies-from-browser`, para contenido con
   sesion. La lista sale de los navegadores que hay en la maquina, y el que viene
   marcado es el que el escritorio tiene por defecto.
+- **Extras**: opciones predeterminadas para quitar anuncios de YouTube (`SponsorBlock`),
+  incrustar capítulos de video (`--embed-chapters`) y adjuntar metadatos completos con carátula.
+- **Avanzado**: campo para especificar argumentos adicionales arbitrarios para yt-dlp
+  (ej.: `--proxy socks5://127.0.0.1:9050` o `--geo-bypass`).
 - **Tema**: seguir el tema de Omarchy en vivo, o clavar una de las paletas
   compartidas, con muestra de colores. La eleccion tambien se recuerda.
 

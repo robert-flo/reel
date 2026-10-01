@@ -57,7 +57,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
             ui.add_space(16.0);
             cookies(ui, app, &palette);
             ui.add_space(16.0);
-            sponsorblock_setting(ui, app, &palette);
+            extras_setting(ui, app, &palette);
+            ui.add_space(16.0);
+            advanced_setting(ui, app, &palette);
             ui.add_space(16.0);
             themes(ui, app, &palette);
             close
@@ -81,12 +83,18 @@ fn commit(app: &mut App) {
         || app.settings.filename_template != app.draft.filename_template
         || app.settings.rate_limit != app.draft.rate_limit
         || app.settings.sponsorblock != app.draft.sponsorblock
+        || app.settings.chapters != app.draft.chapters
+        || app.settings.metadata != app.draft.metadata
+        || app.settings.extra_args != app.draft.extra_args
         || app.settings.subtitle_list() != app.draft_subtitles;
     if changed {
         app.settings.output_dir = app.draft.output_dir.clone();
         app.settings.filename_template = app.draft.filename_template.clone();
         app.settings.rate_limit = app.draft.rate_limit.clone();
         app.settings.sponsorblock = app.draft.sponsorblock;
+        app.settings.chapters = app.draft.chapters;
+        app.settings.metadata = app.draft.metadata;
+        app.settings.extra_args = app.draft.extra_args.clone();
         app.settings.set_subtitles(&app.draft_subtitles.clone());
         app.settings_changed();
     }
@@ -409,17 +417,67 @@ fn cookies(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) 
     }
 }
 
-/// Quitar patrocinios integrados en el video mediante SponsorBlock.
-fn sponsorblock_setting(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+/// Opciones adicionales de descarga y posprocesado (SponsorBlock, capitulos, metadatos).
+fn extras_setting(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
     let tr = app.tr();
-    section(ui, tr.section_sponsorblock, palette);
+    section(ui, tr.section_extras, palette);
 
-    let activo = app.draft.sponsorblock;
-    if chip(ui, tr.sponsorblock_toggle, activo, palette).clicked() {
-        app.draft.sponsorblock = !activo;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+
+        let sb_activo = app.draft.sponsorblock;
+        if chip(ui, tr.sponsorblock_toggle, sb_activo, palette)
+            .on_hover_text(tr.sponsorblock_hint)
+            .clicked()
+        {
+            app.draft.sponsorblock = !sb_activo;
+            commit(app);
+        }
+
+        let ch_activo = app.draft.chapters;
+        if chip(ui, tr.chapters_toggle, ch_activo, palette)
+            .on_hover_text(tr.chapters_hint)
+            .clicked()
+        {
+            app.draft.chapters = !ch_activo;
+            commit(app);
+        }
+
+        let meta_activo = app.draft.metadata;
+        if chip(ui, tr.metadata_toggle, meta_activo, palette)
+            .on_hover_text(tr.metadata_hint)
+            .clicked()
+        {
+            app.draft.metadata = !meta_activo;
+            commit(app);
+        }
+    });
+
+    hint(ui, tr.sponsorblock_hint, palette.dim);
+}
+
+/// Argumentos adicionales que se le pasan directamente a yt-dlp.
+fn advanced_setting(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+    let tr = app.tr();
+    section(ui, tr.section_advanced, palette);
+
+    let field = ui.add(
+        egui::TextEdit::singleline(&mut app.draft.extra_args)
+            .hint_text(text(
+                "--proxy socks5://127.0.0.1:9050",
+                12.0,
+                Weight::Regular,
+                palette.dim,
+            ))
+            .font(Weight::Regular.font_id(12.0))
+            .margin(egui::Margin::symmetric(12, 8))
+            .desired_width(FIELD_WIDTH),
+    );
+    if field.lost_focus() {
         commit(app);
     }
-    hint(ui, tr.sponsorblock_hint, palette.dim);
+
+    hint(ui, tr.extra_args_hint, palette.dim);
 }
 
 /// El selector de tema: seguir el escritorio, o una paleta concreta. La
