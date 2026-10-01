@@ -48,6 +48,8 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   pistas ni se extrae audio. Si andan, el pie muestra las versiones; si falta
   alguna, avisa en ambar nombrando **esa** herramienta. Verificado apuntando
   `REEL_FFMPEG` y `REEL_YTDLP` a rutas que no existen.
+- **Vive sin ventana**: con `--start-hidden` no abre ninguna y la cola baja
+  igual, con lo que el proceso puede quedarse de fondo. Verificado.
 - **La persistencia del tamano de ventana** funciona: verificado en flotante,
   1400x900 se repone. En mosaico no se nota porque manda el compositor.
 
@@ -62,8 +64,11 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   releases publicados. El 404 se trata como "todavia no hay versiones" y el pie
   se calla, pero el camino de descargar e instalar una version nueva esta sin
   ejercitar.
-- **El tray no se probo**: ni el icono, ni `Pegar y descargar`, ni que la cola
-  siga bajando con la ventana cerrada. El codigo esta y compila.
+- **El tray no se probo**: ni el icono, ni su menu, ni `Pegar y descargar`.
+  Lo que si esta verificado es la parte de fondo: con `--start-hidden` la app
+  corre **sin ninguna ventana** y la descarga se completa igual (medido: el
+  mismo video de 11.8 MB, 1280x720, con metadatos, y cero ventanas abiertas).
+  O sea que el diseño de vivir en el tray funciona; falta la bandeja en si.
 - **Un archivo corrupto necesita `volver a bajar` a mano.** No hay deteccion
   automatica: yt-dlp no dice si un archivo existente esta completo, y una
   heuristica por tamano romperia el caso normal.
