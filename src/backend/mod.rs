@@ -228,6 +228,55 @@ pub enum Event {
 ///
 /// Corre en un proceso aparte (`reel --download-selfcheck`), asi que puede
 /// tocar `REEL_YTDLP` sin pisarle el entorno a nadie.
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+
+    fn job_terminado(queue: &mut Queue, state: State) -> u64 {
+        let id = queue.push_ready(
+            "https://ejemplo.test/v".into(),
+            Options::default(),
+            Media::default(),
+        );
+        let job = queue.get_mut(id).expect("deberia estar");
+        job.state = state;
+        job.progress = 1.0;
+        job.postprocessor = Some("Merger".into());
+        id
+    }
+
+    #[test]
+    fn reintentar_devuelve_los_mismos_datos() {
+        let mut queue = Queue::default();
+        let id = job_terminado(&mut queue, State::Cancelled);
+
+        let (url, options) = queue.retry(id).expect("deberia poder reintentar");
+        assert_eq!(url, "https://ejemplo.test/v");
+        assert_eq!(options.format_id, "best");
+
+        let job = queue.get_mut(id).expect("deberia seguir");
+        assert_eq!(job.state, State::Queued);
+        assert_eq!(job.progress, 0.0);
+        assert!(job.speed.is_none());
+        assert!(job.eta_secs.is_none());
+        assert!(job.postprocessor.is_none());
+        // La url, el formato y la carpeta son los mismos: eso es lo que hace
+        // que yt-dlp reanude el `.part` en vez de empezar de cero.
+        assert_eq!(job.url, url);
+    }
+
+    #[test]
+    fn no_se_reintenta_lo_que_esta_andando() {
+        let mut queue = Queue::default();
+        let id = job_terminado(&mut queue, State::Downloading);
+        assert!(
+            queue.retry(id).is_none(),
+            "no deberia reintentar algo activo"
+        );
+        assert!(queue.retry(999).is_none(), "un id que no existe tampoco");
+    }
+}
+
 #[cfg(feature = "selfcheck")]
 pub mod selfcheck {
     use super::ytdlp::{
@@ -269,8 +318,10 @@ pub mod selfcheck {
 # Uso: yt-dlp-falso.sh -P CARPETA -o PLANTILLA URL...
 carpeta="."
 url=""
+fallar=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --fail) fallar=1; shift ;;
     -P) carpeta="$2"; shift 2 ;;
     -o|--progress-template|--print|-f|--merge-output-format|--audio-format|--audio-quality|--sub-langs|--cookies-from-browser) shift 2 ;;
     http*) url="$1"; shift ;;
@@ -287,6 +338,22 @@ case "$url" in
 esac
 
 echo "$url|$segundos|$(date +%s.%N)" >> "$carpeta/arranque.txt"
+final="$carpeta/reel-prueba-$segundos.mp4"
+parte="$final.part"
+
+# Cuantas veces se intento este archivo. Un reintento pasa a la segunda.
+intentos=$(cat "$parte.intentos" 2>/dev/null || echo 0)
+intentos=$((intentos + 1))
+echo "$intentos" > "$parte.intentos"
+echo "intento=$intentos $url" >> "$carpeta/reanudaciones.txt"
+
+# `--fail` hace fallar el intento a proposito, para poder probar el reintento.
+if [ "$fallar" = "1" ] && [ "$intentos" -eq 1 ]; then
+  echo "PROGRESS| 50.0%|1048576.0|9" >&2
+  echo "ERROR: fallo a proposito en el intento 1" >&2
+  exit 1
+fi
+
 paso=$(awk "BEGIN{print $segundos/4}")
 i=1
 while [ "$i" -le 4 ]; do
@@ -294,6 +361,8 @@ while [ "$i" -le 4 ]; do
   # Por stderr: es por donde yt-dlp manda el progreso, y leerlo de stdout era
   # justo el bug que dejo la deteccion del postprocesado sin funcionar.
   echo "PROGRESS| $((i * 25))%|1048576.0|$((4 - i))" >&2
+  # Lo bajado va al `.part`, que es lo que yt-dlp reanuda.
+  : >> "$parte"
   i=$((i + 1))
 done
 # El postprocesado se anuncia igual que yt-dlp: con su progress-template, por
@@ -302,9 +371,9 @@ echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4" >&2
 echo "POSTPROCESS|started|Merger" >&2
 sleep 0.5
 echo "POSTPROCESS|finished|Merger" >&2
-touch "$carpeta/reel-prueba-$segundos.mp4"
+mv "$parte" "$final"
 # El final lo imprime `--print`, que si va por stdout.
-echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
+echo "DONE|$final"
 "#;
         std::fs::write(&path, guion)?;
         permisos_de_ejecucion(&path)?;
@@ -974,6 +1043,83 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         );
     }
 
+    /// Reintentar un trabajo fallado tiene que volver a pedirlo con los mismos
+    /// argumentos, que es lo que hace que yt-dlp reanude el `.part` en vez de
+    /// empezar de cero. El yt-dlp falso falla a proposito en el primer intento.
+    fn comprobar_reintento(salida: &Path) {
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        let mut lanzador = std::fs::read_to_string(&guion).expect("deberia leerlo");
+        // El falso falla en el primer intento solo si se lo piden.
+        lanzador = lanzador.replace("fallar=0", "fallar=1");
+        std::fs::write(&guion, &lanzador).expect("deberia reescribirlo");
+        std::env::set_var("REEL_YTDLP", &guion);
+
+        let backend = Backend::spawn(|| {});
+        encolar(&backend, 1, "https://ejemplo.test/v1", salida);
+
+        // Se espera a que falle.
+        let limite = Instant::now() + Duration::from_secs(20);
+        let mut fallo = false;
+        while Instant::now() < limite && !fallo {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            fallo = queue
+                .jobs
+                .first()
+                .is_some_and(|job| matches!(job.state, State::Failed { .. }));
+        }
+        assert!(fallo, "el primer intento deberia haber fallado");
+
+        // Se reintenta desde la cola, como hace el boton.
+        let pedido = {
+            let mut queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue.retry(1)
+        };
+        let (url, options) = pedido.expect("deberia poder reintentar");
+        backend.send(Command::Start {
+            id: 1,
+            url,
+            options,
+        });
+
+        let limite = Instant::now() + Duration::from_secs(20);
+        let mut finales: Option<State> = None;
+        while Instant::now() < limite && finales.is_none() {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(job) = queue.jobs.first() {
+                if !job.is_active() {
+                    finales = Some(job.state.clone());
+                }
+            }
+        }
+        backend.send(Command::Shutdown);
+
+        let reanudaciones =
+            std::fs::read_to_string(salida.join("reanudaciones.txt")).unwrap_or_default();
+        println!("final={finales:?}");
+        println!("intentos:\n{reanudaciones}");
+        assert!(
+            matches!(finales, Some(State::Done { .. })),
+            "el reintento no termino bien: {finales:?}"
+        );
+        // Dos intentos del mismo trabajo, y el segundo reusando el `.part`.
+        let intentos: Vec<&str> = reanudaciones
+            .lines()
+            .filter(|line| line.starts_with("intento="))
+            .collect();
+        assert_eq!(
+            intentos.len(),
+            2,
+            "no hubo exactamente dos intentos: {intentos:?}"
+        );
+        assert!(
+            intentos[1].starts_with("intento=2"),
+            "el reintento no conto como segundo intento: {intentos:?}"
+        );
+        println!("OK reintento");
+    }
+
     /// Corre en un proceso propio: prepara un directorio, elige la prueba y
     /// devuelve el codigo de salida. Cero significa que paso.
     pub fn run(modo: &str) -> i32 {
@@ -989,6 +1135,7 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
             "cancelacion" => comprobar_cancelacion(&salida),
             "limite" => comprobar_limite(&salida),
             "carrera" => comprobar_carrera_entre_terminar_y_cancelar(&salida),
+            "reintento" => comprobar_reintento(&salida),
             "descarga-real" => comprobar_descarga_real(&salida),
             otro => panic!("prueba desconocida: {otro}"),
         });
@@ -1033,6 +1180,29 @@ impl Queue {
 
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Job> {
         self.jobs.iter_mut().find(|j| j.id == id)
+    }
+
+    /// Devuelve un trabajo terminado a la cola para volver a bajarlo.
+    ///
+    /// No toca la url, el formato ni la carpeta: los mismos argumentos son los
+    /// que hacen que yt-dlp encuentre el `.part` y reanude en vez de empezar de
+    /// cero. Los contadores vuelven a cero porque el progreso viejo ya no dice
+    /// nada del intento nuevo.
+    ///
+    /// Devuelve los datos que hacen falta para volver a pedirlo, o `None` si el
+    /// trabajo no esta para reintentar (por ejemplo, si ya esta bajando).
+    pub fn retry(&mut self, id: u64) -> Option<(String, Options)> {
+        let job = self.jobs.iter_mut().find(|j| j.id == id)?;
+        if job.is_active() {
+            return None;
+        }
+
+        job.state = State::Queued;
+        job.progress = 0.0;
+        job.speed = None;
+        job.eta_secs = None;
+        job.postprocessor = None;
+        Some((job.url.clone(), job.options.clone()))
     }
 
     pub fn active(&self) -> usize {

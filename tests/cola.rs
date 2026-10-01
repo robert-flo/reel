@@ -56,6 +56,11 @@ fn cancelar_mata_el_hijo_de_verdad() {
 }
 
 #[test]
+fn un_trabajo_fallado_se_puede_reintentar() {
+    comprobar("reintento");
+}
+
+#[test]
 fn el_cupo_no_deja_lanzar_todo_a_la_vez() {
     comprobar("limite");
 }

@@ -361,6 +361,13 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         "--newline".into(),
         "--progress".into(),
         "--no-warnings".into(),
+        // Reanudar lo que quedo a medias. yt-dlp ya lo hace solo cuando
+        // encuentra el `.part`, y cancelar lo deja ahi porque la carpeta y la
+        // plantilla no cambian; se pide igual para que no dependa de un
+        // default que podria cambiar, y `--no-overwrites` para que un archivo
+        // ya terminado no se baje dos veces.
+        "--continue".into(),
+        "--no-overwrites".into(),
         "--progress-template".into(),
         PROGRESS_TEMPLATE.into(),
         "--progress-template".into(),
@@ -803,6 +810,17 @@ mod tests {
     /// La descarga pide las dos plantillas: la del progreso y la del
     /// postprocesado. Sin la segunda, la fila nunca diria que esta esperando
     /// ffmpeg.
+    /// Cancelar deja el `.part` en la carpeta y el reintento vuelve a pedir la
+    /// misma, asi que yt-dlp reanuda donde iba. Se pide explicito para no
+    /// depender de que su default siga siendo reanudar.
+    #[test]
+    fn la_descarga_puede_reanudar() {
+        let options = Options::default();
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--continue"));
+        assert!(args.iter().any(|arg| arg == "--no-overwrites"));
+    }
+
     #[test]
     fn la_descarga_pide_las_dos_plantillas() {
         let options = Options::default();

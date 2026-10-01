@@ -565,6 +565,52 @@ impl App {
         self.url.clear();
     }
 
+    /// Vuelve a encolar un trabajo terminado. Los mismos argumentos que la
+    /// primera vez, que es lo que hace que yt-dlp reanude el `.part` que quedo
+    /// en la carpeta en vez de empezar de cero.
+    pub fn retry(&mut self, id: u64) -> bool {
+        let pedido = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.retry(id)
+        };
+        let Some((url, options)) = pedido else {
+            return false;
+        };
+        self.backend.send(Command::Start { id, url, options });
+        true
+    }
+
+    /// Reintenta todo lo que no este andando. Sirve cuando se cae la red y
+    /// fallan varios de una: no hay que ir uno por uno.
+    pub fn retry_failed(&mut self) -> usize {
+        let pedidos: Vec<(u64, String, Options)> = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let ids: Vec<u64> = queue
+                .jobs
+                .iter()
+                .filter(|job| !job.is_active())
+                .map(|job| job.id)
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| queue.retry(id).map(|(url, options)| (id, url, options)))
+                .collect()
+        };
+
+        let cuantos = pedidos.len();
+        for (id, url, options) in pedidos {
+            self.backend.send(Command::Start { id, url, options });
+        }
+        cuantos
+    }
+
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
         // egui entrega el portapapeles por eventos; en Wayland tambien vale
         // `wl-paste`. Un solo lugar que cambiar cuando se decida cual.

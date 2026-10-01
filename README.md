@@ -72,6 +72,14 @@ audio y poner la caratula salen de ahi. Antes se buscaba `[Merger]` en el
 texto, lo que tenia dos problemas: si yt-dlp cambiaba el mensaje la fila dejaba
 de avisar en silencio, y ademas esos mensajes van por stderr, que no se leia.
 
+Un trabajo que ya termino —bien, mal o cancelado— ofrece `reintentar`, y la
+cabecera de la cola ofrece `reintentar todo` cuando hay varios, que es lo que
+uno quiere despues de que se caiga la red. Al reintentar se piden los mismos
+argumentos, asi que **yt-dlp reanuda** el `.part` que quedo en la carpeta en vez
+de empezar de cero: cancelar no borra lo bajado. Se pide `--continue` y
+`--no-overwrites` de forma explicita para no depender de que el default de
+yt-dlp siga siendo reanudar.
+
 Corren como mucho `MAX_CONCURRENTES` (tres) a la vez. Lo que sobre espera su
 lugar en vez de lanzar treinta yt-dlp y treinta ffmpeg contra la maquina.
 Cancelar mata el proceso de verdad y deja el trabajo en `cancelado`, no en
@@ -84,8 +92,8 @@ make selfcheck
 ```
 
 Mide que dos trabajos se solapen, que el estado de la fila no mienta, que el
-tope se respete, que cancelar mate al hijo y que nadie pase de "cancelado" a
-"listo".
+tope se respete, que cancelar mate al hijo, que un trabajo fallado se pueda
+reintentar y que nadie pase de "cancelado" a "listo".
 
 Antes de un commit, `make verify` corre el formato, clippy con los warnings
 como errores y todas las pruebas. `make selfcheck` corre solo las de la cola.

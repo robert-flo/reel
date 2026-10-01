@@ -14,11 +14,16 @@ use super::{human_eta, human_speed, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let mut reintentar_todo: Option<()> = None;
 
     let (jobs, active, done) = {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
         (queue.jobs.clone(), queue.active(), queue.done())
     };
+
+    // Los que ya terminaron se pueden volver a pedir, y al reintentar se
+    // reanuda lo que haya quedado a medias.
+    let retryable = jobs.iter().filter(|job| !job.is_active()).count();
 
     ui.horizontal(|ui| {
         ui.label(text("COLA", 11.0, Weight::SemiBold, palette.dim));
@@ -35,6 +40,23 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ),
                 &palette,
             ));
+            if retryable > 0 {
+                ui.add_space(12.0);
+                let hit = ui
+                    .add(
+                        egui::Label::new(text(
+                            format!("reintentar todo ({retryable})"),
+                            11.0,
+                            Weight::Regular,
+                            palette.dim,
+                        ))
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if hit.clicked() {
+                    reintentar_todo = Some(());
+                }
+            }
         });
     });
 
@@ -46,19 +68,26 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
 
     let mut cancel: Option<u64> = None;
+    let mut retry: Option<u64> = None;
     let mut abrir: Option<String> = None;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for job in &jobs {
-                row(ui, app, job, &mut cancel, &mut abrir);
+                row(ui, app, job, &mut cancel, &mut retry, &mut abrir);
                 ui.add_space(Metrics::GAP);
             }
         });
 
     if let Some(id) = cancel {
         app.backend.send(Command::Cancel { id });
+    }
+    if let Some(()) = reintentar_todo {
+        app.retry_failed();
+    }
+    if let Some(id) = retry {
+        app.retry(id);
     }
     if let Some(path) = abrir {
         revelar(&path);
@@ -85,6 +114,7 @@ fn row(
     app: &App,
     job: &crate::backend::Job,
     cancel: &mut Option<u64>,
+    retry: &mut Option<u64>,
     abrir: &mut Option<String>,
 ) {
     let palette = app.palette;
@@ -162,6 +192,25 @@ fn row(
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
                                     *cancel = Some(job.id);
+                                }
+                                ui.add_space(10.0);
+                            }
+                            // Un trabajo que ya no corre se puede volver a
+                            // pedir; al reintentar, yt-dlp reanuda el `.part`.
+                            if !job.is_active() {
+                                let hit = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            "reintentar",
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit.clicked() {
+                                    *retry = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }
