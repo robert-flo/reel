@@ -20,8 +20,16 @@ pub const APP_NAME: &str = "reel";
 pub enum UpdateState {
     Idle,
     Checking,
-    Available { version: String },
-    Downloading { received: u64, total: u64 },
+    /// El repositorio todavia no tiene ninguna version publicada. No es una
+    /// falla: es que no hay nada que ofrecer.
+    SinReleases,
+    Available {
+        version: String,
+    },
+    Downloading {
+        received: u64,
+        total: u64,
+    },
     Ready,
     Unsupported(String),
     Failed(String),

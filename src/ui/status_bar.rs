@@ -61,6 +61,9 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
 
     match &app.update {
         UpdateState::Idle | UpdateState::Checking => {}
+        // Mientras no haya releases, callarse: no es una falla del usuario ni
+        // algo que pueda arreglar.
+        UpdateState::SinReleases => {}
         UpdateState::Unsupported(reason) => {
             ui.label(caption(reason.clone(), &palette));
         }

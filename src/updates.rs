@@ -43,11 +43,24 @@ pub fn check(tx: Sender<UpdateMessage>) {
                 version: release.version.clone(),
             },
             Ok(None) => UpdateState::Idle,
+            // Mientras no haya releases publicados, GitHub contesta 404. No es
+            // una falla que valga la pena contar en rojo: se distingue para
+            // poder decir "todavia no hay versiones" en vez de "no pude".
+            Err(error) if sin_releases(&error) => UpdateState::SinReleases,
             Err(error) => UpdateState::Failed(format!("no pude revisar: {error}")),
         };
 
         let _ = tx.send(UpdateMessage::State(state));
     });
+}
+
+/// Si el error es "este repositorio no tiene releases", que es lo normal
+/// mientras no se publique ninguna. Se mira el texto porque el updater no da
+/// un tipo para esto, y el 404 de la API de GitHub es lo unico que aparece en
+/// este caso.
+fn sin_releases(error: &anyhow::Error) -> bool {
+    let texto = format!("{error:#}").to_lowercase();
+    texto.contains("404") || texto.contains("not found")
 }
 
 /// Descarga y verifica. `installation()` se niega cuando la copia la maneja
@@ -86,4 +99,30 @@ pub fn download(tx: Sender<UpdateMessage>) {
 /// version nueva no arranca. Despues de esto la app se cierra.
 pub fn handoff() {
     log::info!("entregando la actualizacion al ayudante");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Un repositorio sin releases contesta 404, y eso no es una falla: es que
+    /// todavia no hay nada publicado.
+    #[test]
+    fn reconoce_un_repositorio_sin_releases() {
+        let error = anyhow::anyhow!("no pude revisar: HTTP 404 Not Found");
+        assert!(sin_releases(&error));
+
+        let error = anyhow::anyhow!("404");
+        assert!(sin_releases(&error));
+    }
+
+    /// Un problema de red o un JSON raro si son fallas que valga contar.
+    #[test]
+    fn no_confunde_otras_fallas_con_un_404() {
+        let error = anyhow::anyhow!("no pude revisar: connection refused");
+        assert!(!sin_releases(&error));
+
+        let error = anyhow::anyhow!("no pude revisar: expected value at line 1");
+        assert!(!sin_releases(&error));
+    }
 }
