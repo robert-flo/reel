@@ -9,6 +9,7 @@ mod app;
 mod backend;
 mod dirs;
 mod fonts;
+mod i18n;
 mod icon;
 mod instancia;
 mod palette;

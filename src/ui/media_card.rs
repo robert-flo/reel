@@ -14,8 +14,9 @@ use super::{human_duration, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
     if app.probing && app.preview.is_none() {
-        ui.label(caption("leyendo el enlace...", &palette));
+        ui.label(caption(tr.reading_link, &palette));
         ui.add_space(Metrics::GAP);
         return;
     }
@@ -30,7 +31,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(text(
-                            "no pude leer ese enlace",
+                            tr.could_not_read,
                             13.0,
                             Weight::Medium,
                             palette.danger,
@@ -42,7 +43,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         let hit_copy = ui
                             .add(
                                 egui::Label::new(text(
-                                    "copiar error",
+                                    tr.copy_error,
                                     11.0,
                                     Weight::Regular,
                                     palette.dim,
@@ -84,16 +85,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     Layout::top_down(Align::Min),
                     |ui| {
                         ui.add_space(4.0);
+                        let title = if preview.title.is_empty() {
+                            tr.untitled.to_string()
+                        } else {
+                            preview.title.clone()
+                        };
                         ui.add(
-                            egui::Label::new(text(
-                                &preview.title,
-                                16.0,
-                                Weight::SemiBold,
-                                palette.text,
-                            ))
-                            .truncate(),
+                            egui::Label::new(text(&title, 16.0, Weight::SemiBold, palette.text))
+                                .truncate(),
                         )
-                        .on_hover_text(&preview.title);
+                        .on_hover_text(&title);
                         ui.add_space(6.0);
 
                         let mut meta = Vec::new();
@@ -118,10 +119,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         if let Some(cuantos) = preview.playlist_count {
                             ui.add_space(4.0);
                             let mut info_lista = Vec::new();
-                            info_lista.push(format!(
-                                "{cuantos} {}",
-                                if cuantos == 1 { "video" } else { "videos" }
-                            ));
+                            info_lista.push(tr.n_videos(cuantos));
                             if let Some(duration) = preview.duration {
                                 info_lista.push(human_duration(duration));
                             }
@@ -129,7 +127,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 info_lista.push(format!("~{}", super::human_bytes(filesize)));
                             }
                             ui.label(text(
-                                format!("es una lista: {}", info_lista.join("  ·  ")),
+                                format!("{} {}", tr.playlist_prefix, info_lista.join("  ·  ")),
                                 11.0,
                                 Weight::Medium,
                                 palette.warning,
@@ -155,11 +153,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .is_some_and(|cuantos| App::pide_confirmacion(cuantos, preview.filesize));
                     let esperando = app.confirmar_lista == preview.playlist_count;
                     let etiqueta = match preview.playlist_count {
-                        Some(cuantos) if pide_confirmar && esperando => {
-                            format!("confirmar {cuantos}")
-                        }
-                        Some(cuantos) => format!("encolar {cuantos}"),
-                        None => "descargar".to_string(),
+                        Some(cuantos) if pide_confirmar && esperando => tr.confirm_n(cuantos),
+                        Some(cuantos) => tr.enqueue_n(cuantos),
+                        None => tr.download.to_string(),
                     };
                     let go = ui.add_sized(
                         Vec2::new(140.0, 38.0),
@@ -237,11 +233,19 @@ fn thumbnail(ui: &mut egui::Ui, app: &App, url: Option<&str>) {
 
 fn formats(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         for format in FORMATS {
             let selected = app.options.format_id == format.id;
-            if chip(ui, format.label, selected, &palette).clicked() {
+            if chip(
+                ui,
+                tr.format_label(format.id, format.label),
+                selected,
+                &palette,
+            )
+            .clicked()
+            {
                 app.select_format(format.id);
             }
         }
@@ -252,6 +256,7 @@ fn formats(app: &mut App, ui: &mut egui::Ui) {
 /// metadatos, subtitulos y cookies del navegador.
 fn extras(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
     let format = crate::backend::format_by_id(&app.options.format_id);
 
     ui.horizontal_wrapped(|ui| {
@@ -260,37 +265,25 @@ fn extras(app: &mut App, ui: &mut egui::Ui) {
 
         if format.kind == Kind::Video {
             let mut chapters = app.options.chapters;
-            if toggle(ui, "capitulos", &mut chapters, &mut first, &palette) {
+            if toggle(ui, tr.chapters, &mut chapters, &mut first, &palette) {
                 app.options.chapters = chapters;
             }
         }
 
         let mut metadata = app.options.metadata;
-        if toggle(
-            ui,
-            "metadatos + caratula",
-            &mut metadata,
-            &mut first,
-            &palette,
-        ) {
+        if toggle(ui, tr.metadata_artwork, &mut metadata, &mut first, &palette) {
             app.options.metadata = metadata;
         }
 
         let mut subtitles = app.settings.subtitle_languages().is_some();
-        if toggle(ui, "subtitulos", &mut subtitles, &mut first, &palette) {
+        if toggle(ui, tr.subtitles, &mut subtitles, &mut first, &palette) {
             // Tocar aca es elegir un idioma, no apagarlos todos: los que haya
             // en el panel se quedan.
             app.toggle_subtitle("es");
         }
 
         let mut cookies = app.options.cookies_from_browser.is_some();
-        if toggle(
-            ui,
-            "cookies del navegador",
-            &mut cookies,
-            &mut first,
-            &palette,
-        ) {
+        if toggle(ui, tr.browser_cookies, &mut cookies, &mut first, &palette) {
             app.options.cookies_from_browser = cookies.then(|| app.default_browser.clone());
         }
     });

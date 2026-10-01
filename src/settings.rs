@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::dirs;
+use crate::i18n::Language;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -31,6 +32,9 @@ pub struct Settings {
     pub rate_limit: String,
     /// Archivo de paleta elegido. `None` es seguir el tema del escritorio.
     pub theme: Option<String>,
+    /// Idioma de la interfaz. Vacio o desconocido es ingles.
+    #[serde(default)]
+    pub language: Language,
 }
 
 impl Settings {
@@ -338,5 +342,24 @@ mod tests {
             Some(DirProblem::Missing)
         );
         assert_eq!(check_dir(Path::new("/tmp")), None);
+    }
+
+    #[test]
+    fn el_idioma_falta_es_ingles_y_se_guarda() {
+        let settings = Settings::default();
+        assert_eq!(settings.language, Language::En);
+
+        let settings = Settings {
+            language: Language::Es,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serde");
+        assert!(json.contains("\"language\": \"es\"") || json.contains("\"language\":\"es\""));
+
+        let loaded: Settings = serde_json::from_str(&json).expect("roundtrip");
+        assert_eq!(loaded.language, Language::Es);
+
+        let sin_campo: Settings = serde_json::from_str("{}").expect("default");
+        assert_eq!(sin_campo.language, Language::En);
     }
 }

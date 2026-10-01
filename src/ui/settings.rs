@@ -41,8 +41,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
         )
         .show(ctx, |ui| {
             ui.set_min_width(PANEL_WIDTH);
-            let close = header(ui, &palette);
+            let close = header(ui, app, &palette);
             separator(ui, &palette);
+            language(ui, app, &palette);
+            ui.add_space(16.0);
             output_dir(ui, app, &palette);
             ui.add_space(16.0);
             format(ui, app, &palette);
@@ -86,10 +88,15 @@ fn commit(app: &mut App) {
     }
 }
 
-fn header(ui: &mut egui::Ui, palette: &crate::palette::Palette) -> bool {
+fn header(ui: &mut egui::Ui, app: &App, palette: &crate::palette::Palette) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
-        ui.label(text("ajustes", 15.0, Weight::SemiBold, palette.text));
+        ui.label(text(
+            app.tr().settings,
+            15.0,
+            Weight::SemiBold,
+            palette.text,
+        ));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let cross = ui
                 .add(
@@ -125,9 +132,26 @@ fn hint(ui: &mut egui::Ui, message: &str, color: Color32) {
     ui.label(text(message, 11.0, Weight::Regular, color));
 }
 
+/// El idioma de la interfaz. Se aplica al instante y se guarda con el resto.
+fn language(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+    let tr = app.tr();
+    section(ui, tr.section_language, palette);
+
+    let actual = app.settings.language;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        for idioma in crate::i18n::Language::ALL {
+            if chip(ui, idioma.native_name(), actual == *idioma, palette).clicked() {
+                app.select_language(*idioma);
+            }
+        }
+    });
+}
+
 /// La carpeta donde yt-dlp deja los archivos. Vacia es la del sistema.
 fn output_dir(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "CARPETA DE SALIDA", palette);
+    let tr = app.tr();
+    section(ui, tr.section_output, palette);
 
     let field = ui.add(
         egui::TextEdit::singleline(&mut app.draft.output_dir)
@@ -146,30 +170,34 @@ fn output_dir(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palett
         .and_then(|path| settings::check_dir(&path))
     {
         None => match app.draft.output_path() {
-            Some(path) => hint(ui, &format!("se guarda en {}", path.display()), palette.dim),
-            None => hint(
-                ui,
-                "vacia: ~/Videos para video y ~/Music para audio",
-                palette.dim,
-            ),
+            Some(path) => hint(ui, &tr.output_saved(path.display()), palette.dim),
+            None => hint(ui, tr.output_empty, palette.dim),
         },
-        Some(DirProblem::Missing) => hint(ui, "esa carpeta todavia no existe", palette.warning),
-        Some(DirProblem::NotADirectory) => hint(ui, "esa ruta es un archivo", palette.danger),
-        Some(DirProblem::NotWritable) => hint(ui, "esa carpeta es de solo lectura", palette.danger),
+        Some(DirProblem::Missing) => hint(ui, tr.output_missing, palette.warning),
+        Some(DirProblem::NotADirectory) => hint(ui, tr.output_not_dir, palette.danger),
+        Some(DirProblem::NotWritable) => hint(ui, tr.output_not_writable, palette.danger),
     }
 }
 
 /// El formato que se va a bajar. Se elige en la ficha cuando hay un enlace,
 /// pero tambien es un ajuste: el que queda es el que arranca la proxima vez.
 fn format(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "FORMATO", palette);
+    let tr = app.tr();
+    section(ui, tr.section_format, palette);
 
     let elegido = app.settings.format();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         for opcion in crate::backend::FORMATS {
             let activo = opcion.id == elegido.id;
-            if chip(ui, opcion.label, activo, palette).clicked() {
+            if chip(
+                ui,
+                tr.format_label(opcion.id, opcion.label),
+                activo,
+                palette,
+            )
+            .clicked()
+            {
                 app.select_format(opcion.id);
             }
         }
@@ -180,8 +208,8 @@ fn format(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
         &format!(
             "{} · {}",
             match elegido.kind {
-                crate::backend::Kind::Video => "video",
-                crate::backend::Kind::Audio => "solo audio",
+                crate::backend::Kind::Video => tr.format_video,
+                crate::backend::Kind::Audio => tr.format_audio_only,
             },
             elegido.args.join(" ")
         ),
@@ -191,16 +219,20 @@ fn format(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
 
 /// El `-o` de yt-dlp, para quien lo quiera tocar.
 fn filename(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "NOMBRE DEL ARCHIVO", palette);
+    let tr = app.tr();
+    section(ui, tr.section_filename, palette);
 
     let mut nuevo_template = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let presets = [
-            ("estandar", crate::backend::DEFAULT_TEMPLATE),
-            ("con canal/autor", "%(uploader)s - %(title)s.%(ext)s"),
-            ("numerado", "%(playlist_index)02d - %(title)s.%(ext)s"),
-            ("fecha y titulo", "%(upload_date)s - %(title)s.%(ext)s"),
+            (tr.filename_standard, crate::backend::DEFAULT_TEMPLATE),
+            (tr.filename_uploader, "%(uploader)s - %(title)s.%(ext)s"),
+            (
+                tr.filename_numbered,
+                "%(playlist_index)02d - %(title)s.%(ext)s",
+            ),
+            (tr.filename_date, "%(upload_date)s - %(title)s.%(ext)s"),
         ];
         for (label, tmpl) in presets {
             let activo = app.draft.filename_template.trim() == tmpl;
@@ -231,22 +263,19 @@ fn filename(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette)
         commit(app);
     }
 
-    hint(
-        ui,
-        "plantilla de yt-dlp; vacia usa %(title).120s.%(ext)s",
-        palette.dim,
-    );
+    hint(ui, tr.filename_hint, palette.dim);
 }
 
 /// Limite maximo de velocidad de bajada para yt-dlp (--limit-rate).
 fn rate_limit(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "LIMITE DE VELOCIDAD", palette);
+    let tr = app.tr();
+    section(ui, tr.section_rate, palette);
 
     let mut nuevo_limite = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let presets = [
-            ("", "sin limite"),
+            ("", tr.rate_unlimited),
             ("1M", "1 MB/s"),
             ("2M", "2 MB/s"),
             ("5M", "5 MB/s"),
@@ -268,7 +297,7 @@ fn rate_limit(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palett
     let field = ui.add(
         egui::TextEdit::singleline(&mut app.draft.rate_limit)
             .hint_text(text(
-                "o escribe un valor (ej: 500K, 3M)",
+                tr.rate_custom_hint,
                 12.0,
                 Weight::Regular,
                 palette.dim,
@@ -281,26 +310,23 @@ fn rate_limit(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palett
         commit(app);
     }
 
-    hint(
-        ui,
-        "limita el ancho de banda usado por yt-dlp para no saturar tu conexion",
-        palette.dim,
-    );
+    hint(ui, tr.rate_hint, palette.dim);
 }
 
 /// Los idiomas de subtitulos. Antes eran "es" fijo; ahora los comunes son un
 /// toque y los demas se escriben a mano.
 fn subtitles(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "SUBTITULOS", palette);
+    let tr = app.tr();
+    section(ui, tr.section_subtitles, palette);
 
     // Los que cubren casi todo lo que se baja. El resto, a mano.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         for (codigo, nombre) in [
-            ("es", "espanol"),
-            ("en", "ingles"),
-            ("pt", "portugues"),
-            ("fr", "frances"),
+            ("es", tr.lang_spanish),
+            ("en", tr.lang_english),
+            ("pt", tr.lang_portuguese),
+            ("fr", tr.lang_french),
         ] {
             let activo = app.settings.subtitles.iter().any(|idioma| idioma == codigo);
             if chip(ui, codigo, activo, palette)
@@ -325,19 +351,16 @@ fn subtitles(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette
     }
 
     match app.settings.subtitle_languages() {
-        Some(idiomas) => hint(
-            ui,
-            &format!("--sub-langs {idiomas} · se incrustan en el archivo"),
-            palette.dim,
-        ),
-        None => hint(ui, "apagados; se agregan al video", palette.dim),
+        Some(idiomas) => hint(ui, &tr.subtitles_on(&idiomas), palette.dim),
+        None => hint(ui, tr.subtitles_off, palette.dim),
     }
 }
 
 /// Las cookies del navegador, que es el issue de yoinks que el README
 /// promete resolver. La lista sale de las carpetas que hay en la maquina.
 fn cookies(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "COOKIES DEL NAVEGADOR", palette);
+    let tr = app.tr();
+    section(ui, tr.section_cookies, palette);
 
     let detected = settings::browsers();
     let on = !app.settings.cookies_browser.trim().is_empty();
@@ -363,7 +386,7 @@ fn cookies(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) 
             });
 
         ui.add_space(10.0);
-        if chip(ui, "usar cookies", on, palette).clicked() {
+        if chip(ui, tr.use_cookies, on, palette).clicked() {
             if on {
                 app.settings.cookies_browser.clear();
             } else {
@@ -376,30 +399,20 @@ fn cookies(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) 
     });
 
     if detected.is_empty() {
-        hint(
-            ui,
-            "no encontre navegadores aca; el nombre se le pasa tal cual a yt-dlp",
-            palette.warning,
-        );
+        hint(ui, tr.no_browsers, palette.warning);
     } else {
-        hint(
-            ui,
-            &format!(
-                "detectados: {} · para contenido con sesion",
-                detected.join(", ")
-            ),
-            palette.dim,
-        );
+        hint(ui, &tr.browsers_found(&detected.join(", ")), palette.dim);
     }
 }
 
 /// El selector de tema: seguir el escritorio, o una paleta concreta. La
 /// eleccion se persiste, que era lo otro que faltaba.
 fn themes(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
-    section(ui, "TEMA", palette);
+    let tr = app.tr();
+    section(ui, tr.section_theme, palette);
 
     let following = app.selected_theme.is_none();
-    if chip(ui, "seguir el escritorio", following, palette).clicked() {
+    if chip(ui, tr.follow_desktop, following, palette).clicked() {
         app.select_theme(None);
         return;
     }

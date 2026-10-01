@@ -434,7 +434,7 @@ fn media_from_json(json: &serde_json::Value) -> Media {
     };
 
     Media {
-        title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
+        title: json["title"].as_str().unwrap_or("").to_string(),
         uploader: json["uploader"]
             .as_str()
             .or_else(|| json["channel"].as_str())
@@ -526,7 +526,7 @@ fn entrada_de_lista(json: &serde_json::Value) -> Option<Media> {
         .or_else(|| json["filesize_approx"].as_u64());
 
     Some(Media {
-        title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
+        title: json["title"].as_str().unwrap_or("").to_string(),
         uploader: json["uploader"]
             .as_str()
             .or_else(|| json["channel"].as_str())
@@ -825,29 +825,40 @@ pub(crate) fn parse_progress(id: u64, rest: &str) -> Option<Event> {
     })
 }
 
+/// Un error de yt-dlp que se repite, ya clasificado. El texto se traduce
+/// en la interfaz: aca solo se reconoce el caso.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Consejo {
+    Forbidden,
+    Private,
+    Unavailable,
+    FormatMissing,
+    Timeout,
+}
+
 /// Que hacer con un error que se repite. Devuelve `None` cuando no hay nada
 /// util que agregar, y ahi se deja el mensaje de yt-dlp tal cual.
 ///
 /// El 403 de YouTube, por ejemplo, no es culpa del usuario ni del archivo: es
 /// que el sitio frena los pedidos seguidos. Decir eso ahorra el rato de pensar
 /// que la app esta rota.
-pub(crate) fn consejo_para(error: &str) -> Option<&'static str> {
+pub(crate) fn consejo_para(error: &str) -> Option<Consejo> {
     let texto = error.to_lowercase();
 
     if texto.contains("403") || texto.contains("forbidden") {
-        return Some("el sitio rechazo el pedido; suele pasar si se pide muchas veces seguidas, proba de nuevo en un rato");
+        return Some(Consejo::Forbidden);
     }
     if texto.contains("private video") || texto.contains("login") || texto.contains("sign in") {
-        return Some("parece que hace falta iniciar sesion: proba con las cookies del navegador");
+        return Some(Consejo::Private);
     }
     if texto.contains("video unavailable") || texto.contains("removed") {
-        return Some("el video ya no esta disponible en el sitio");
+        return Some(Consejo::Unavailable);
     }
     if texto.contains("requested format is not available") {
-        return Some("ese formato no existe para este video: elegi otro");
+        return Some(Consejo::FormatMissing);
     }
     if texto.contains("timed out") || texto.contains("timeout") {
-        return Some("se corto la conexion: reintentar suele alcanzar");
+        return Some(Consejo::Timeout);
     }
     None
 }
@@ -1169,13 +1180,18 @@ mod tests {
     #[test]
     fn los_errores_conocidos_traen_consejo() {
         let real = "unable to download video data: HTTP Error 403: Forbidden";
-        let consejo = consejo_para(real).expect("el 403 deberia traer consejo");
-        assert!(consejo.contains("de nuevo"), "consejo poco util: {consejo}");
+        assert_eq!(consejo_para(real), Some(Consejo::Forbidden));
 
-        assert!(consejo_para("ERROR: Private video").is_some());
-        assert!(consejo_para("Video unavailable").is_some());
-        assert!(consejo_para("Requested format is not available").is_some());
-        assert!(consejo_para("connection timed out").is_some());
+        assert_eq!(consejo_para("ERROR: Private video"), Some(Consejo::Private));
+        assert_eq!(
+            consejo_para("Video unavailable"),
+            Some(Consejo::Unavailable)
+        );
+        assert_eq!(
+            consejo_para("Requested format is not available"),
+            Some(Consejo::FormatMissing)
+        );
+        assert_eq!(consejo_para("connection timed out"), Some(Consejo::Timeout));
     }
 
     /// Un error que no conocemos se deja como vino: inventar un consejo seria
