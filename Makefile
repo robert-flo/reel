@@ -129,7 +129,16 @@ check: ## compila sin generar binario, rapido
 
 .PHONY: test
 test: ## corre las pruebas
-	cargo test
+	cargo test --features selfcheck
+
+.PHONY: selfcheck
+selfcheck: ## pruebas de la cola con un yt-dlp falso: concurrencia, tope, cancelacion
+	cargo test --features selfcheck --test cola -- --test-threads=1
+
+.PHONY: selfcheck-net
+selfcheck-net: ## lo mismo contra el yt-dlp de verdad (necesita internet)
+	cargo build --features selfcheck
+	./$(DEBUG_BIN) --download-selfcheck descarga-real
 
 .PHONY: fmt
 fmt: ## formatea
@@ -137,7 +146,7 @@ fmt: ## formatea
 
 .PHONY: lint
 lint: ## clippy con los warnings como errores
-	cargo clippy --all-targets -- -D warnings
+	cargo clippy --all-targets --features selfcheck -- -D warnings
 
 .PHONY: verify
 verify: fmt lint test ## lo que tiene que pasar antes de un commit

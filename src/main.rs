@@ -40,6 +40,14 @@ impl eframe::App for Window {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Las pruebas de la cola corren en un proceso propio: tocan `REEL_YTDLP` y
+    // no quieren abrir ventana ni ensuciar el log. Van detras de una feature
+    // para que el binario normal no cargue con ellas.
+    #[cfg(feature = "selfcheck")]
+    if let Some(modo) = selfcheck_mode() {
+        std::process::exit(backend::selfcheck::run(&modo));
+    }
+
     // `--settings` es de la app, no del actualizador: se saca de los
     // argumentos antes de pasearlos por ahi. Abre el panel al arrancar, que es
     // lo que quiere un acceso directo del menu.
@@ -108,6 +116,18 @@ fn take_flag(arguments: &mut Vec<String>, flag: &str) -> bool {
     let before = arguments.len();
     arguments.retain(|argument| argument != flag);
     arguments.len() != before
+}
+
+/// `--download-selfcheck MODO`, para las pruebas de la cola.
+#[cfg(feature = "selfcheck")]
+fn selfcheck_mode() -> Option<String> {
+    let mut argumentos = std::env::args().skip(1);
+    while let Some(argumento) = argumentos.next() {
+        if argumento == "--download-selfcheck" {
+            return argumentos.next();
+        }
+    }
+    None
 }
 
 fn native_options() -> eframe::NativeOptions {

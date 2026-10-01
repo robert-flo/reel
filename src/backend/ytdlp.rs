@@ -29,7 +29,7 @@ const PROGRESS_TEMPLATE: &str =
 /// yt-dlp del PATH. Si algun dia se quiere el binario propio (como yoinks, que
 /// lo baja a ~/.yoinks/bin), este es el unico lugar que cambia. `REEL_YTDLP`
 /// apunta a otro, que es como se prueban las carreras sin bajar nada.
-fn ytdlp_binary() -> PathBuf {
+pub(crate) fn ytdlp_binary() -> PathBuf {
     std::env::var_os("REEL_YTDLP")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("yt-dlp"))
@@ -254,7 +254,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn probe(url: &str) -> Result<Media, String> {
+pub(crate) fn probe(url: &str) -> Result<Media, String> {
     let output = Proc::new(ytdlp_binary())
         .args(["-J", "--no-playlist", "--no-warnings", url])
         .stdout(Stdio::piped())
@@ -285,7 +285,7 @@ fn probe(url: &str) -> Result<Media, String> {
 
 /// Los argumentos de la descarga, en orden. Aparte de `run_job` para poder
 /// probarlos sin lanzar yt-dlp.
-fn download_args(url: &str, options: &Options) -> (Vec<String>, PathBuf) {
+pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathBuf) {
     let format = format_by_id(&options.format_id);
     let dir = options
         .output_dir
@@ -442,7 +442,7 @@ where
     Ok(())
 }
 
-fn parse_progress(id: u64, rest: &str) -> Option<Event> {
+pub(crate) fn parse_progress(id: u64, rest: &str) -> Option<Event> {
     let mut parts = rest.split('|');
     let percent = parts.next()?.trim().trim_end_matches('%');
     let speed = parts.next().unwrap_or("NA").trim();

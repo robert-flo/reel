@@ -7,8 +7,60 @@ Una app de escritorio nativa para descargar video y audio, construida con
 El trabajo pesado lo hace [yt-dlp](https://github.com/yt-dlp/yt-dlp), que
 soporta 1800 y pico de sitios, asi que esto no es solo YouTube.
 
-> Estado: esqueleto. La interfaz y el cableado de fastframe estan puestos; la
-> cola corre contra yt-dlp de verdad. Todavia no hay releases.
+> Estado: esqueleto avanzado. La interfaz, el cableado de fastframe y el panel
+> de ajustes estan puestos; la cola corre contra yt-dlp de verdad. Todavia no
+> hay releases.
+
+## Ajustes
+
+El boton `ajustes` de la esquina, o `reel --settings`, abre el panel. Lo que
+se elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
+
+- **Carpeta de salida**: vacia usa `~/Videos` para video y `~/Music` para
+  audio, que es lo que elige yt-dlp. Acepta `~` y `$HOME`, y avisa si la
+  carpeta no existe, es un archivo o es de solo lectura.
+- **Nombre del archivo**: la plantilla de `-o` de yt-dlp. Vacia usa
+  `%(title).120s.%(ext)s`.
+- **Cookies del navegador**: `--cookies-from-browser`, para contenido con
+  sesion. La lista sale de los navegadores que hay en la maquina, y el que
+  viene marcado es el que el escritorio tiene por defecto.
+- **Subtitulos**: los idiomas que se bajan y se incrustan. Los comunes
+  (`es`, `en`, `pt`, `fr`) son un toque y los demas se escriben a mano como
+  `de, it`, que es lo que termina en `--sub-langs`.
+- **Tema**: seguir el tema de Omarchy en vivo, o clavar una de las paletas
+  compartidas. La eleccion tambien se recuerda.
+
+## La cola
+
+Varios trabajos bajan a la vez, cada uno en su hilo, y la fila dice lo que
+esta pasando de verdad: `en espera` hasta que yt-dlp arranca, `descargando`
+con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
+pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
+`abrir carpeta`.
+
+Corren como mucho `MAX_CONCURRENTES` (tres) a la vez. Lo que sobre espera su
+lugar en vez de lanzar treinta yt-dlp y treinta ffmpeg contra la maquina.
+Cancelar mata el proceso de verdad y deja el trabajo en `cancelado`, no en
+`listo`.
+
+Todo eso se prueba sin bajar nada y sin red, con un yt-dlp de mentira:
+
+```sh
+make selfcheck
+```
+
+Mide que dos trabajos se solapen, que el estado de la fila no mienta, que el
+tope se respete, que cancelar mate al hijo y que nadie pase de "cancelado" a
+"listo".
+
+Antes de un commit, `make verify` corre el formato, clippy con los warnings
+como errores y todas las pruebas. `make selfcheck` corre solo las de la cola.
+
+`make selfcheck-net` es la unica que sale a internet: usa el yt-dlp de verdad
+para comprobar el contrato que las demas no pueden, porque el yt-dlp de mentira
+acepta cualquier flag. Lee los metadatos de un video libre, le pasa los mismos
+argumentos que armaria la app (en seco, con `--skip-download`) y confirma que
+el progreso llega con la forma que la cola sabe leer.
 
 ## Por que existe
 
@@ -20,7 +72,7 @@ lo pone en una ventana donde la cola es la pantalla principal.
 
 | | yoinks | plugin de barra | reel |
 |---|---|---|---|
-| Varias descargas a la vez | no | no | si, con progreso por item |
+| Varias descargas a la vez | no | no | si, hasta 3, con progreso por item |
 | Carpeta y nombre de salida | fijos | fijos | configurables |
 | Cookies del navegador | no | no | si |
 | Capitulos y subtitulos | no | no | si |
@@ -73,12 +125,19 @@ Para apuntar a otro binario de yt-dlp:
 REEL_YTDLP=/ruta/a/yt-dlp cargo run
 ```
 
+Y para abrir la app con el panel de ajustes ya puesto:
+
+```sh
+cargo run -- --settings
+```
+
 ## Estructura
 
 ```
 src/
 ├── main.rs            arranque: log, shell, ventana
 ├── app.rs             estado, frame, e impl Resident
+├── settings.rs        los ajustes que duran, y su archivo
 ├── palette.rs         los colores de la app y su mapeo a egui
 ├── fonts.rs           tipografia
 ├── icon.rs            iconos e icono del tray
@@ -88,13 +147,20 @@ src/
 │   ├── mod.rs         la cola, los formatos, los eventos
 │   └── ytdlp.rs       el hilo que habla con yt-dlp
 └── ui/
-    ├── top_bar.rs     nombre, version, tema, ajustes
+    ├── top_bar.rs     nombre, version, ajustes
     ├── url_bar.rs     enlace, pegar, yoink
     ├── media_card.rs  lo detectado y sus formatos
     ├── queue.rs       la cola, que es la pantalla principal
+    ├── settings.rs    el panel de ajustes y el selector de tema
     ├── status_bar.rs  carpeta, tema seguido, actualizacion
     └── widgets.rs     chips, barra de progreso, tarjetas
+tests/
+└── cola.rs            la cola a procesos reales, con un yt-dlp falso
 ```
+
+`backend/ytdlp.rs` trae, detras de la feature `selfcheck`, un `yt-dlp` de
+mentira y las comprobaciones que corren en un proceso aparte. No va en el
+binario normal: `cargo build` sin la feature no lo incluye.
 
 ## Omarchy
 

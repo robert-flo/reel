@@ -6,24 +6,12 @@ use fastframe_fonts::Weight;
 
 use crate::palette::Palette;
 
-use super::Metrics;
-
 /// Texto con el peso correcto. fastframe-fonts trae Inter en 400, 500, 600 y
 /// 700, asi que la jerarquia es de peso y no de tamanos arbitrarios.
 pub fn text(content: impl Into<String>, size: f32, weight: Weight, color: Color32) -> RichText {
     RichText::new(content.into())
         .font(weight.font_id(size))
         .color(color)
-}
-
-#[allow(dead_code)]
-pub fn title(content: impl Into<String>, palette: &Palette) -> RichText {
-    text(content, 16.0, Weight::SemiBold, palette.text)
-}
-
-#[allow(dead_code)]
-pub fn body(content: impl Into<String>, palette: &Palette) -> RichText {
-    text(content, 13.0, Weight::Regular, palette.text)
 }
 
 pub fn caption(content: impl Into<String>, palette: &Palette) -> RichText {
@@ -88,19 +76,4 @@ pub fn progress_bar(ui: &mut Ui, fraction: f32, color: Color32, palette: &Palett
         filled.set_width(rect.width() * fraction);
         ui.painter().rect_filled(filled, radius, color);
     }
-}
-
-/// Un panel con fondo y borde: la tarjeta que se repite en toda la ventana.
-#[allow(dead_code)]
-pub fn card<R>(
-    ui: &mut Ui,
-    palette: &Palette,
-    add_contents: impl FnOnce(&mut Ui) -> R,
-) -> egui::InnerResponse<R> {
-    egui::Frame::new()
-        .fill(palette.panel)
-        .stroke(Stroke::new(1.0, palette.outline))
-        .corner_radius(CornerRadius::same(Metrics::RADIUS))
-        .inner_margin(egui::Margin::symmetric(16, 14))
-        .show(ui, add_contents)
 }

@@ -19,16 +19,21 @@ impl Metrics {
     pub const STATUS_BAR: f32 = 46.0;
     pub const URL_ROW: f32 = 48.0;
     pub const CARD: f32 = 140.0;
-    #[allow(dead_code)]
-    pub const QUEUE_ROW: f32 = 74.0;
     pub const RADIUS: u8 = 10;
 }
 
-/// Un tiempo en segundos como lo diria una persona.
+/// Un tiempo restante como lo diria una persona: "5:03" si falta menos de una
+/// hora, "2h 05" si falta mas. Antes eran minutos sueltos, asi que una hora se
+/// leia "60:00", que no le dice nada a nadie.
 pub fn human_eta(seconds: u64) -> String {
-    let minutes = seconds / 60;
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
-    format!("{minutes:02}:{seconds:02}")
+    if hours > 0 {
+        format!("{hours}h {minutes:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
 }
 
 /// Bytes por segundo en unidades legibles.
@@ -74,7 +79,11 @@ mod tests {
 
     #[test]
     fn eta_legible() {
-        assert_eq!(human_eta(41), "00:41");
-        assert_eq!(human_eta(82), "01:22");
+        assert_eq!(human_eta(41), "0:41");
+        assert_eq!(human_eta(82), "1:22");
+        assert_eq!(human_eta(303), "5:03");
+        // Lo que antes se leia "60:00".
+        assert_eq!(human_eta(3600), "1h 00");
+        assert_eq!(human_eta(7500), "2h 05");
     }
 }
