@@ -1,0 +1,32 @@
+[package]
+name = "reel"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT"
+description = "Pegas un enlace, elegis un formato, y la cola hace el resto."
+repository = "https://github.com/robert-flo/reel"
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+egui = "0.36"
+egui_extras = { version = "0.36", features = ["svg"] }
+
+fastframe-text   = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-fonts  = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-icons  = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-theme  = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-log    = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-shell  = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-tray   = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
+fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2", features = ["reqwest"] }
+
+anyhow = "1"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "6"
+
+[profile.release]
+lto = "thin"
+strip = true
