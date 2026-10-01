@@ -16,7 +16,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let height = Metrics::URL_ROW;
 
     ui.horizontal(|ui| {
-        let button_width = 102.0;
+        let button_width = 112.0;
         let field_width = ui.available_width() - (button_width * 2.0) - (Metrics::GAP * 2.0);
 
         let field = egui::TextEdit::singleline(&mut app.url)
@@ -45,9 +45,23 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let enabled = !app.url.trim().is_empty();
         let go = ui.add_enabled(
             enabled,
-            egui::Button::new(text("yoink", 14.0, Weight::SemiBold, palette.on_accent))
-                .fill(palette.accent)
-                .min_size(Vec2::new(button_width, height)),
+            egui::Button::new(text(
+                "descargar",
+                14.0,
+                Weight::SemiBold,
+                if enabled {
+                    palette.on_accent
+                } else {
+                    palette.dim
+                },
+            ))
+            .fill(if enabled {
+                palette.accent
+            } else {
+                palette.surface
+            })
+            .corner_radius(egui::CornerRadius::same(8))
+            .min_size(Vec2::new(button_width, height)),
         );
 
         if go.clicked() || (submitted && enabled) {

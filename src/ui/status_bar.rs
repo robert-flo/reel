@@ -82,7 +82,11 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
             }
         }
         UpdateState::Failed(reason) => {
-            ui.label(text(reason.clone(), 11.0, Weight::Regular, palette.danger));
+            // Mientras no haya releases publicados el servidor contesta 404, y
+            // eso no es una falla que merezca ser lo unico rojo de la ventana:
+            // se dice en gris y el detalle queda en el hover.
+            ui.label(caption("no pude revisar actualizaciones", &palette))
+                .on_hover_text(reason.clone());
         }
     }
 }

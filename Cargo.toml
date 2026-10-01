@@ -10,7 +10,10 @@ repository = "https://github.com/robert-flo/reel"
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
 egui = "0.36"
-egui_extras = { version = "0.36", features = ["svg"] }
+# "http" es lo que sirve las miniaturas remotas; sin el, egui pinta su
+# marca de error en vez de la imagen.
+egui_extras = { version = "0.36", features = ["svg", "http", "image"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 fastframe-text   = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }
 fastframe-fonts  = { git = "https://github.com/crmne/fastframe", tag = "v0.2.2" }

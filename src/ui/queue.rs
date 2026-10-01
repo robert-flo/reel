@@ -22,7 +22,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ui.label(text("COLA", 11.0, Weight::SemiBold, palette.dim));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(caption(
-                format!("{active} activas  ·  {done} completadas"),
+                format!(
+                    "{active} {}  ·  {done} {}",
+                    if active == 1 { "activa" } else { "activas" },
+                    if done == 1 {
+                        "completada"
+                    } else {
+                        "completadas"
+                    }
+                ),
                 &palette,
             ));
         });
@@ -38,7 +46,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let mut cancel: Option<u64> = None;
 
     egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
+        .auto_shrink([false, true])
         .show(ui, |ui| {
             for job in &jobs {
                 row(ui, app, job, &mut cancel);
@@ -97,32 +105,33 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, cancel: &mut Opt
                     } else {
                         job.media.title.clone()
                     };
-                    ui.label(text(title, 13.0, Weight::SemiBold, palette.text));
+                    ui.add(
+                        egui::Label::new(text(title, 13.0, Weight::SemiBold, palette.text))
+                            .truncate(),
+                    );
                     ui.add_space(4.0);
-                    ui.label(caption(
-                        format!(
-                            "{} · {}",
-                            crate::backend::format_by_id(&job.options.format_id).label,
-                            if job.media.host.is_empty() {
-                                "—".to_string()
-                            } else {
-                                job.media.host.clone()
-                            }
-                        ),
-                        &palette,
-                    ));
+                    ui.label(caption(job_format_label(job), &palette));
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     ui.vertical(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                            if job.is_active()
-                                && ui
-                                    .button(caption("cancelar", &palette))
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .clicked()
-                            {
-                                *cancel = Some(job.id);
+                            if job.is_active() {
+                                let hit = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            "cancelar",
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit.clicked() {
+                                    *cancel = Some(job.id);
+                                }
+                                ui.add_space(10.0);
                             }
                             ui.label(text(status, 11.0, Weight::Medium, status_color));
                         });
@@ -135,6 +144,28 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, cancel: &mut Opt
             ui.add_space(10.0);
             progress_bar(ui, job.progress, bar_color, &palette);
         });
+}
+
+/// "1080p · mp4" o "mp3 · 320k": la calidad y el contenedor que de verdad va a
+/// quedar en el disco, que es lo unico que importa en una fila de la cola.
+fn job_format_label(job: &crate::backend::Job) -> String {
+    let format = crate::backend::format_by_id(&job.options.format_id);
+    let container = format
+        .args
+        .windows(2)
+        .find(|pair| pair[0] == "--merge-output-format" || pair[0] == "--audio-format")
+        .map(|pair| pair[1].to_string());
+    let quality = format
+        .args
+        .windows(2)
+        .find(|pair| pair[0] == "--audio-quality")
+        .map(|pair| pair[1].to_string());
+
+    match (container, quality) {
+        (Some(container), Some(quality)) => format!("{container} · {quality}"),
+        (Some(container), None) => format!("{} · {container}", format.label.to_lowercase()),
+        (None, _) => format.label.to_lowercase(),
+    }
 }
 
 fn empty(ui: &mut egui::Ui, app: &App) {

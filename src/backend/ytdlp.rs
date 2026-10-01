@@ -177,6 +177,10 @@ fn download<W>(
     if options.chapters && format.kind == Kind::Video {
         args.push("--embed-chapters".into());
     }
+    if options.metadata {
+        args.push("--embed-metadata".into());
+        args.push("--embed-thumbnail".into());
+    }
     if let Some(languages) = &options.subtitles {
         args.push("--write-subs".into());
         args.push("--sub-langs".into());

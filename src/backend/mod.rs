@@ -105,6 +105,8 @@ pub fn format_by_id(id: &str) -> &'static Format {
 pub struct Options {
     pub format_id: String,
     pub chapters: bool,
+    /// `--embed-metadata --embed-thumbnail`: lo que yoinks trae fijo.
+    pub metadata: bool,
     pub subtitles: Option<String>,
     /// `--cookies-from-browser`, el issue 11 de yoinks.
     pub cookies_from_browser: Option<String>,
@@ -117,6 +119,7 @@ impl Default for Options {
         Self {
             format_id: "best".into(),
             chapters: true,
+            metadata: true,
             subtitles: None,
             cookies_from_browser: None,
             output_dir: None,
