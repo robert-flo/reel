@@ -11,6 +11,7 @@ mod dirs;
 mod fonts;
 mod icon;
 mod palette;
+mod settings;
 mod ui;
 mod updates;
 
@@ -39,6 +40,12 @@ impl eframe::App for Window {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `--settings` es de la app, no del actualizador: se saca de los
+    // argumentos antes de pasearlos por ahi. Abre el panel al arrancar, que es
+    // lo que quiere un acceso directo del menu.
+    let mut arguments: Vec<String> = std::env::args().skip(1).collect();
+    let open_settings = take_flag(&mut arguments, "--settings");
+
     // Primero el ayudante de actualizacion, que puede quedarse con los
     // argumentos y terminar sin abrir ventana.
     let launch = fastframe_update::intercept(&updates::UPDATES);
@@ -47,6 +54,9 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .any(|argument| argument == "--start-hidden");
 
+    // El log necesita su carpeta antes de que fastframe-log abra el archivo.
+    dirs::ensure_state_dir();
+
     fastframe_log::Logging::new("reel", env!("CARGO_PKG_VERSION"))
         .filter("warn,reel=info")
         .file(dirs::log_file())
@@ -54,13 +64,16 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     if let Some(error) = launch.error {
-        log::warn!("la actualizacion anterior se revirtio: {error}");
+        log::warn!("la actualizacion anterior se revertio: {error}");
     }
 
     let waker = fastframe_shell::Waker::default();
     let mut app = App::new(&waker);
     app.start_themes();
     app.check_updates();
+    if open_settings {
+        app.open_settings();
+    }
 
     if let Some(receipt) = launch.receipt {
         std::thread::spawn(move || receipt.acknowledge());
@@ -87,6 +100,14 @@ fn main() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("no pude abrir la ventana: {error}"))?;
 
     Ok(())
+}
+
+/// Saca una bandera de los argumentos y dice si estaba. Asi una bandera
+/// nuestra no le llega al actualizador como si fuera basura.
+fn take_flag(arguments: &mut Vec<String>, flag: &str) -> bool {
+    let before = arguments.len();
+    arguments.retain(|argument| argument != flag);
+    arguments.len() != before
 }
 
 fn native_options() -> eframe::NativeOptions {

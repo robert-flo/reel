@@ -3,6 +3,7 @@
 
 pub mod media_card;
 pub mod queue;
+pub mod settings;
 pub mod status_bar;
 pub mod top_bar;
 pub mod url_bar;

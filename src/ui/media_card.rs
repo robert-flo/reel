@@ -202,9 +202,11 @@ fn extras(app: &mut App, ui: &mut egui::Ui) {
             app.options.metadata = metadata;
         }
 
-        let mut subtitles = app.options.subtitles.is_some();
-        if toggle(ui, "subtitulos es", &mut subtitles, &mut first, &palette) {
-            app.options.subtitles = subtitles.then(|| "es".to_string());
+        let mut subtitles = app.settings.subtitle_languages().is_some();
+        if toggle(ui, "subtitulos", &mut subtitles, &mut first, &palette) {
+            // Tocar aca es elegir un idioma, no apagarlos todos: los que haya
+            // en el panel se quedan.
+            app.toggle_subtitle("es");
         }
 
         let mut cookies = app.options.cookies_from_browser.is_some();

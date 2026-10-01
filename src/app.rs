@@ -10,6 +10,7 @@ use fastframe_theme::{Catalog, DesktopThemes, Transition, Waker as ThemeWaker};
 
 use crate::backend::{Backend, Command, Media, Options};
 use crate::palette::Palette;
+use crate::settings;
 use crate::ui;
 
 pub const SLUG: &str = "reel";
@@ -34,13 +35,31 @@ pub enum UpdateMessage {
 
 pub struct App {
     pub url: String,
+    /// El formato elegido para el proximo trabajo. Lo demas sale de `settings`.
     pub options: Options,
+    /// Lo que dura entre arranques: carpeta, plantilla, cookies y tema.
+    pub settings: settings::Settings,
+    /// Copia de trabajo de los campos de texto del panel, para no validar una
+    /// ruta a medio tipear. Se confirma al cerrar el panel.
+    pub draft: settings::Settings,
+    /// Los idiomas de subtitulos mientras se escriben: `es, en`.
+    pub draft_subtitles: String,
+    /// El panel de ajustes esta abierto.
+    pub settings_open: bool,
+    /// Algo de `settings` cambio y hay que escribirlo a disco.
+    settings_dirty: bool,
     pub preview: Option<Media>,
     /// El enlace al que corresponde la ficha de arriba.
     pub preview_url: Option<String>,
     pub preview_error: Option<String>,
     /// Hay un vistazo en curso: el boton dice "leyendo".
     pub probing: bool,
+    /// Lo pidio "Pegar y descargar" del tray: cuando el vistazo llegue, el
+    /// trabajo entra a la cola solo, sin pasar por el boton.
+    enqueue_when_probed: bool,
+    /// El tray pidio pegar; se atiende en el hilo de la interfaz, que es donde
+    /// egui y `wl-paste` se llevan bien.
+    pub paste_requested: bool,
     pub backend: Backend,
 
     pub palette: Palette,
@@ -55,9 +74,6 @@ pub struct App {
     update_tx: Sender<UpdateMessage>,
 
     pub tray: Option<fastframe_tray::Tray>,
-    pub theme_picker_open: bool,
-    pub settings_open: bool,
-    pub paste_requested: bool,
     pub default_browser: String,
 
     // Lo que fastframe-shell necesita saber.
@@ -101,13 +117,29 @@ impl App {
             ThemeWaker::new(move || waker.wake())
         };
 
-        Self {
+        // Lo elegido la ultima vez: el tema arranca de ahi y no del default,
+        // que era justo lo que se perdia al cerrar.
+        let settings = settings::Settings::load();
+        let default_browser = if settings.cookies_browser.trim().is_empty() {
+            settings::detect_browser()
+        } else {
+            settings.cookies_browser.clone()
+        };
+
+        let mut app = Self {
             url: String::new(),
             options: Options::default(),
+            settings: settings.clone(),
+            draft: settings.clone(),
+            draft_subtitles: settings.subtitle_list(),
+            settings_open: false,
+            settings_dirty: false,
             preview: None,
             preview_url: None,
             preview_error: None,
             probing: false,
+            enqueue_when_probed: false,
+            paste_requested: false,
             backend,
             palette,
             wanted_palette: palette,
@@ -119,14 +151,83 @@ impl App {
             update_rx,
             update_tx,
             tray,
-            theme_picker_open: false,
-            settings_open: false,
-            paste_requested: false,
-            default_browser: "firefox".into(),
+            default_browser,
             hide_intent: false,
             wants_show: false,
             quit_requested: false,
+        };
+
+        app.selected_theme = app.settings.theme.clone();
+        app.sync_options_from_settings();
+        app
+    }
+
+    /// El formato lo elige la ficha; lo demas son ajustes, y viven en un solo
+    /// lugar para que el panel y lo que se le pasa a yt-dlp no se separen.
+    /// Se llama al arrancar y cada vez que el panel toca algo.
+    pub fn sync_options_from_settings(&mut self) {
+        self.options.output_dir = self.settings.output_path();
+        // `template` resuelve el vacio; `None` deja que yt-dlp use su default.
+        self.options.filename_template = {
+            let trimmed = self.settings.filename_template.trim();
+            (!trimmed.is_empty()).then(|| self.settings.template().to_string())
+        };
+        self.options.cookies_from_browser = {
+            let browser = self.settings.cookies_browser.trim();
+            (!browser.is_empty()).then(|| browser.to_string())
+        };
+        self.options.subtitles = self.settings.subtitle_languages();
+    }
+
+    /// Abre el panel con una copia fresca de lo guardado, para que un borrador
+    /// viejo no reviva al reabrirlo.
+    pub fn open_settings(&mut self) {
+        self.draft = self.settings.clone();
+        self.draft_subtitles = self.settings.subtitle_list();
+        self.settings_open = true;
+    }
+
+    /// Poner o quitar un idioma desde la ficha, para que el panel y la ficha no
+    /// se contradigan.
+    pub fn toggle_subtitle(&mut self, idioma: &str) {
+        let mut idiomas = self.settings.subtitles.clone();
+        match idiomas.iter().position(|ya| ya == idioma) {
+            Some(at) => {
+                idiomas.remove(at);
+            }
+            None => idiomas.push(idioma.to_string()),
         }
+        self.settings.subtitles = idiomas;
+        self.draft_subtitles = self.settings.subtitle_list();
+        self.settings_changed();
+    }
+
+    /// Marca los ajustes como cambiados. Lo que corre sin ventana los escribe
+    /// en el siguiente frame, en un hilo aparte: guardar no frena la interfaz.
+    pub fn settings_changed(&mut self) {
+        self.sync_options_from_settings();
+        self.settings_dirty = true;
+    }
+
+    /// Elegir tema es un ajuste mas, asi que se guarda como cualquier otro.
+    pub fn select_theme(&mut self, filename: Option<String>) {
+        self.selected_theme = filename.clone();
+        self.settings.theme = filename;
+        self.settings_dirty = true;
+        self.rescan_themes();
+    }
+
+    /// Escribe lo que haya pendiente una sola vez por frame.
+    fn save_settings(&mut self) {
+        if !std::mem::replace(&mut self.settings_dirty, false) {
+            return;
+        }
+        let settings = self.settings.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = settings.save() {
+                log::warn!("no pude guardar los ajustes: {error}");
+            }
+        });
     }
 
     /// Arranca el catalogo de temas: los archivos del usuario, las ocho
@@ -200,6 +301,12 @@ impl App {
                 ui::queue::show(self, cui);
             });
 
+        // El modal va despues del panel central: encima de todo, con su velo
+        // detras, y comiendose el Escape y los clics de afuera.
+        if self.settings_open && ui::settings::show(self, ui.ctx()) {
+            self.settings_open = false;
+        }
+
         // La revelacion de colores desde el centro, como hace Omarchy. Va de
         // ultimo en el frame, siempre.
         self.transition.paint(ui.ctx());
@@ -216,6 +323,8 @@ impl App {
             self.sync_preview();
             ctx.request_repaint();
         }
+
+        self.pump_paste();
 
         for message in self.update_rx.try_iter() {
             let UpdateMessage::State(state) = message;
@@ -238,6 +347,26 @@ impl App {
         }
 
         self.pump_tray();
+        self.save_settings();
+    }
+
+    /// "Pegar y descargar" del tray: pega, lee el enlace y deja marcado que el
+    /// trabajo entre a la cola solo. Antes esto solo levantaba una bandera que
+    /// nadie miraba.
+    fn pump_paste(&mut self) {
+        if !std::mem::replace(&mut self.paste_requested, false) {
+            return;
+        }
+        let Some(clipped) = self.clipboard_text_uncached() else {
+            log::warn!("no habia nada para pegar en el portapapeles");
+            return;
+        };
+        self.url = clipped;
+        self.enqueue_when_probed = true;
+        // Si el panel estaba abierto, se cierra: el enlace viene a la cola,
+        // no a que alguien lo mire.
+        self.settings_open = false;
+        self.preview_current_url();
     }
 
     fn pump_tray(&mut self) {
@@ -292,23 +421,32 @@ impl App {
     }
 
     fn sync_preview(&mut self) {
-        let queue = self
-            .backend
-            .queue
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (preview, error) = {
+            let queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            (queue.preview.clone(), queue.preview_error.clone())
+        };
 
-        if let Some((url, media)) = &queue.preview {
-            self.preview = Some(media.clone());
-            self.preview_url = Some(url.clone());
+        if let Some((url, media)) = preview {
+            self.preview = Some(media);
+            self.preview_url = Some(url);
             self.preview_error = None;
             self.probing = false;
+
+            // Lo pidio el tray: no hay nadie para apretar "descargar".
+            if std::mem::take(&mut self.enqueue_when_probed) {
+                self.enqueue_preview();
+            }
         }
-        if let Some(reason) = &queue.preview_error {
+        if let Some(reason) = error {
             self.preview = None;
             self.preview_url = None;
-            self.preview_error = Some(reason.clone());
+            self.preview_error = Some(reason);
             self.probing = false;
+            self.enqueue_when_probed = false;
         }
     }
 
@@ -364,6 +502,11 @@ impl App {
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
         // egui entrega el portapapeles por eventos; en Wayland tambien vale
         // `wl-paste`. Un solo lugar que cambiar cuando se decida cual.
+        self.clipboard_text_uncached()
+    }
+
+    /// Sin `Context`, para el camino del tray, que no tiene frame a mano.
+    fn clipboard_text_uncached(&self) -> Option<String> {
         std::process::Command::new("wl-paste")
             .output()
             .ok()
@@ -435,7 +578,6 @@ impl fastframe_shell::Resident for App {
     fn window_gone(&mut self) {
         self.hide_intent = false;
         self.wants_show = false;
-        self.theme_picker_open = false;
         self.settings_open = false;
     }
 

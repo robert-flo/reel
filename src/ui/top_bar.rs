@@ -31,11 +31,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if link(ui, "ajustes", app).clicked() {
-                        app.settings_open = !app.settings_open;
-                    }
-                    ui.add_space(12.0);
-                    if link(ui, "tema", app).clicked() {
-                        app.theme_picker_open = !app.theme_picker_open;
+                        app.open_settings();
                     }
                 });
             });

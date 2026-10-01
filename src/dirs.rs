@@ -20,6 +20,22 @@ pub fn state_dir() -> PathBuf {
         .unwrap_or_else(config_dir)
 }
 
+/// Deja listo el directorio de estado. Hace falta antes de inicializar el log:
+/// fastframe-log abre el archivo pero no crea la carpeta, asi que en una
+/// instalacion nueva el log se perdia entero y en silencio. Un fallo aca no
+/// impide arrancar, solo se queda sin log.
+pub fn ensure_state_dir() {
+    if let Err(error) = std::fs::create_dir_all(state_dir()) {
+        eprintln!("no pude crear {}: {error}", state_dir().display());
+    }
+}
+
+/// Los ajustes del usuario, en config y no en state: son suyos, se editan a
+/// mano si hace falta y no se pierden al limpiar el estado.
+pub fn settings_file() -> PathBuf {
+    config_dir().join("settings.json")
+}
+
 pub fn log_file() -> PathBuf {
     state_dir().join("reel.log")
 }
