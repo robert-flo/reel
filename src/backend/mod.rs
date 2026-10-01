@@ -253,9 +253,11 @@ pub mod selfcheck {
         cuando: f64,
     }
 
-    /// Un `yt-dlp` de mentira. Escribe las lineas que la app sabe leer (el
-    /// progreso y los avisos de postprocesado) y deja su hora de arranque en un
-    /// archivo, que es lo unico que permite ver si dos trabajos se solaparon.
+    /// Un `yt-dlp` de mentira. Escribe las lineas que la app sabe leer por donde
+    /// las escribe yt-dlp de verdad: el progreso y los avisos de postprocesado
+    /// por stderr, y el `DONE` de `--print` por stdout. Deja ademas su hora de
+    /// arranque en un archivo, que es lo unico que permite ver si dos trabajos
+    /// se solaparon.
     ///
     /// La duracion la saca de la propia url (`.../v1`, `.../v2`). Es a
     /// proposito: si cada trabajo necesitara su propio binario, habria que
@@ -289,17 +291,19 @@ paso=$(awk "BEGIN{print $segundos/4}")
 i=1
 while [ "$i" -le 4 ]; do
   sleep "$paso"
-  echo "PROGRESS| $((i * 25))%|1048576.0|$((4 - i))"
+  # Por stderr: es por donde yt-dlp manda el progreso, y leerlo de stdout era
+  # justo el bug que dejo la deteccion del postprocesado sin funcionar.
+  echo "PROGRESS| $((i * 25))%|1048576.0|$((4 - i))" >&2
   i=$((i + 1))
 done
-# El postprocesado se anuncia como lo hace yt-dlp de verdad: con su
-# progress-template, y por stderr, que es por donde yt-dlp manda el progreso.
-# Darle un respiro deja que el sondeo lo alcance a ver, como con ffmpeg.
+# El postprocesado se anuncia igual que yt-dlp: con su progress-template, por
+# stderr, y con un respiro para que el sondeo lo alcance a ver, como con ffmpeg.
 echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4" >&2
 echo "POSTPROCESS|started|Merger" >&2
 sleep 0.5
 echo "POSTPROCESS|finished|Merger" >&2
 touch "$carpeta/reel-prueba-$segundos.mp4"
+# El final lo imprime `--print`, que si va por stdout.
 echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
 "#;
         std::fs::write(&path, guion)?;
@@ -469,6 +473,7 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         let mut vio_progreso = false;
         let mut vio_postproceso = false;
         let mut vio_en_espera = false;
+        let mut paso_visto: Option<String> = None;
         let mut finales: Option<State> = None;
 
         while Instant::now() < limite {
@@ -479,7 +484,10 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
                     match &job.state {
                         State::Queued => vio_en_espera = true,
                         State::Downloading => vio_descarga = true,
-                        State::Postprocessing { .. } => vio_postproceso = true,
+                        State::Postprocessing { .. } => {
+                            vio_postproceso = true;
+                            paso_visto = job.postprocessor.clone();
+                        }
                         State::Done { .. } | State::Failed { .. } | State::Cancelled => {
                             finales = Some(job.state.clone());
                         }
@@ -498,11 +506,24 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
 
         backend.send(Command::Shutdown);
         println!(
-            "espera={vio_en_espera} descarga={vio_descarga} progreso={vio_progreso} postproceso={vio_postproceso} final={finales:?}"
+            "espera={vio_en_espera} descarga={vio_descarga} progreso={vio_progreso} postproceso={paso_visto:?} final={finales:?}"
         );
         assert!(vio_descarga, "nunca se vio el trabajo descargando");
-        assert!(vio_progreso, "nunca llego progreso");
-        assert!(vio_postproceso, "nunca se vio el postprocesado de ffmpeg");
+        // El progreso y el postprocesado los manda yt-dlp por stderr: si se
+        // vuelve a leer solo stdout, esto deja de llegar.
+        assert!(
+            vio_progreso,
+            "nunca llego progreso: no se esta leyendo stderr"
+        );
+        assert!(
+            vio_postproceso,
+            "nunca se vio el postprocesado: no se estan leyendo los avisos de stderr"
+        );
+        assert_eq!(
+            paso_visto.as_deref(),
+            Some("Merger"),
+            "el estado no llevaba el nombre del paso"
+        );
         assert!(
             matches!(finales, Some(State::Done { .. })),
             "no termino listo: {finales:?}"

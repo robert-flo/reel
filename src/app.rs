@@ -57,6 +57,10 @@ pub struct App {
     /// Lo pidio "Pegar y descargar" del tray: cuando el vistazo llegue, el
     /// trabajo entra a la cola solo, sin pasar por el boton.
     enqueue_when_probed: bool,
+    /// Cuantos trabajos habia activos en el frame anterior. Sirve para avisar
+    /// cuando la cola pasa de tener trabajo a estar quieta, y no en cada
+    /// archivo: encolar diez avisaria diez veces.
+    activos_antes: usize,
     /// El tray pidio pegar; se atiende en el hilo de la interfaz, que es donde
     /// egui y `wl-paste` se llevan bien.
     pub paste_requested: bool,
@@ -139,6 +143,7 @@ impl App {
             preview_error: None,
             probing: false,
             enqueue_when_probed: false,
+            activos_antes: 0,
             paste_requested: false,
             backend,
             palette,
@@ -166,6 +171,10 @@ impl App {
     /// lugar para que el panel y lo que se le pasa a yt-dlp no se separen.
     /// Se llama al arrancar y cada vez que el panel toca algo.
     pub fn sync_options_from_settings(&mut self) {
+        // El formato tambien es un ajuste: el que se eligio la ultima vez es el
+        // que arranca. `Settings::format` cae al primero si el guardado ya no
+        // existe.
+        self.options.format_id = self.settings.format().id.to_string();
         self.options.output_dir = self.settings.output_path();
         // `template` resuelve el vacio; `None` deja que yt-dlp use su default.
         self.options.filename_template = {
@@ -207,6 +216,12 @@ impl App {
     pub fn settings_changed(&mut self) {
         self.sync_options_from_settings();
         self.settings_dirty = true;
+    }
+
+    /// Elegir formato se guarda, para no volver a "Mejor" en cada arranque.
+    pub fn select_format(&mut self, format_id: &str) {
+        self.settings.format_id = format_id.to_string();
+        self.settings_changed();
     }
 
     /// Elegir tema es un ajuste mas, asi que se guarda como cualquier otro.
@@ -324,6 +339,7 @@ impl App {
             ctx.request_repaint();
         }
 
+        self.avisar_si_termino();
         self.pump_paste();
 
         for message in self.update_rx.try_iter() {
@@ -348,6 +364,47 @@ impl App {
 
         self.pump_tray();
         self.save_settings();
+    }
+
+    /// Avisa por el escritorio cuando la cola deja de tener trabajo. Se mira
+    /// el cambio y no cada trabajo: al encolar varios, avisar por archivo
+    /// seria una lluvia de notificaciones justo cuando el usuario esta mirando
+    /// la ventana.
+    fn avisar_si_termino(&mut self) {
+        let (activos, hechos, fallados) = {
+            let queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let activos = queue.active();
+            let hechos = queue.done();
+            let fallados = queue
+                .jobs
+                .iter()
+                .filter(|job| matches!(job.state, crate::backend::State::Failed { .. }))
+                .count();
+            (activos, hechos, fallados)
+        };
+
+        let antes = std::mem::replace(&mut self.activos_antes, activos);
+        if activos > 0 || antes == 0 {
+            return;
+        }
+
+        // Si nada salio bien, decirlo tambien tiene valor.
+        let cuerpo = match (hechos, fallados) {
+            (0, n) => format!(
+                "{n} {} fallo",
+                if n == 1 { "descarga" } else { "descargas" }
+            ),
+            (n, 0) => format!(
+                "{n} {} listo",
+                if n == 1 { "descarga" } else { "descargas" }
+            ),
+            (bien, mal) => format!("{bien} listas, {mal} con error"),
+        };
+        avisar("reel", &cuerpo);
     }
 
     /// "Pegar y descargar" del tray: pega, lee el enlace y deja marcado que el
@@ -561,6 +618,17 @@ impl App {
 
     pub fn hides_to_tray(&self) -> bool {
         self.tray.is_some()
+    }
+}
+
+/// Una notificacion del escritorio, con lo que haya. No es criticalo: si no
+/// hay servidor de notificaciones, se pierde el aviso y la app sigue.
+fn avisar(titulo: &str, cuerpo: &str) {
+    if let Err(error) = std::process::Command::new("notify-send")
+        .args(["--app-name=reel", "--icon=reel", titulo, cuerpo])
+        .spawn()
+    {
+        log::debug!("no pude avisar por el escritorio: {error}");
     }
 }
 

@@ -19,6 +19,8 @@ pub struct Settings {
     pub output_dir: String,
     /// Plantilla de `-o`. Vacia significa el default de la app.
     pub filename_template: String,
+    /// El id del formato elegido ("best", "1080p", "mp3"...). Vacio es "best".
+    pub format_id: String,
     /// Nombre del navegador para `--cookies-from-browser`. Vacio es apagado.
     pub cookies_browser: String,
     /// Idiomas de subtitulos. Vacio es apagado.
@@ -94,6 +96,20 @@ impl Settings {
             .filter(|idioma| !idioma.is_empty())
             .collect();
         (!limpios.is_empty()).then(|| limpios.join(","))
+    }
+
+    /// El formato elegido, ya comprobado contra los que existen. Un id que ya
+    /// no esta —porque se saco un preset o el archivo se edito a mano— vuelve
+    /// al primero en vez de dejar la cola sin formato.
+    pub fn format(&self) -> &'static crate::backend::Format {
+        let guardado = crate::backend::FORMATS
+            .iter()
+            .any(|format| format.id == self.format_id);
+        if guardado {
+            crate::backend::format_by_id(&self.format_id)
+        } else {
+            &crate::backend::FORMATS[0]
+        }
     }
 
     /// Los idiomas como se escriben en el panel: `es, en`.
@@ -285,6 +301,23 @@ mod tests {
         // Vaciar es apagar los subtitulos.
         settings.set_subtitles("   ");
         assert_eq!(settings.subtitle_languages(), None);
+    }
+
+    /// Un formato guardado que ya no existe no puede dejar la cola sin
+    /// formato: se vuelve al primero.
+    #[test]
+    fn un_formato_que_ya_no_existe_vuelve_al_primero() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.format().id, "best");
+
+        settings.format_id = "1080p".into();
+        assert_eq!(settings.format().id, "1080p");
+
+        settings.format_id = "formato-que-no-existe".into();
+        assert_eq!(settings.format().id, "best");
+
+        settings.format_id.clear();
+        assert_eq!(settings.format().id, "best");
     }
 
     #[test]

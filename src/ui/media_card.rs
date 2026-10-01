@@ -168,7 +168,7 @@ fn formats(app: &mut App, ui: &mut egui::Ui) {
         for format in FORMATS {
             let selected = app.options.format_id == format.id;
             if chip(ui, format.label, selected, &palette).clicked() {
-                app.options.format_id = format.id.to_string();
+                app.select_format(format.id);
             }
         }
     });

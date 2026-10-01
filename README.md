@@ -19,6 +19,9 @@ se elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
 - **Carpeta de salida**: vacia usa `~/Videos` para video y `~/Music` para
   audio, que es lo que elige yt-dlp. Acepta `~` y `$HOME`, y avisa si la
   carpeta no existe, es un archivo o es de solo lectura.
+- **Formato**: el que se va a bajar. Se elige en la ficha cuando hay un enlace
+  pegado, pero tambien es un ajuste: el que queda es el que arranca la proxima
+  vez, en vez de volver siempre a "Mejor".
 - **Nombre del archivo**: la plantilla de `-o` de yt-dlp. Vacia usa
   `%(title).120s.%(ext)s`.
 - **Cookies del navegador**: `--cookies-from-browser`, para contenido con
@@ -37,6 +40,11 @@ esta pasando de verdad: `en espera` hasta que yt-dlp arranca, `descargando`
 con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
 pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
 `abrir carpeta`.
+
+Cuando la cola deja de tener trabajo, la app avisa por el escritorio con
+`notify-send`. Avisa una vez, no por archivo: al encolar diez enlaces, diez
+notificaciones serian una lluvia justo cuando el usuario esta mirando la
+ventana.
 
 El paso de postprocesado lo cuenta yt-dlp con su `postprocess:`
 `--progress-template`, no adivinando sus mensajes: unir pistas, extraer el

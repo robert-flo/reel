@@ -45,6 +45,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
             separator(ui, &palette);
             output_dir(ui, app, &palette);
             ui.add_space(16.0);
+            format(ui, app, &palette);
+            ui.add_space(16.0);
             filename(ui, app, &palette);
             ui.add_space(16.0);
             subtitles(ui, app, &palette);
@@ -151,6 +153,36 @@ fn output_dir(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palett
         Some(DirProblem::NotADirectory) => hint(ui, "esa ruta es un archivo", palette.danger),
         Some(DirProblem::NotWritable) => hint(ui, "esa carpeta es de solo lectura", palette.danger),
     }
+}
+
+/// El formato que se va a bajar. Se elige en la ficha cuando hay un enlace,
+/// pero tambien es un ajuste: el que queda es el que arranca la proxima vez.
+fn format(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+    section(ui, "FORMATO", palette);
+
+    let elegido = app.settings.format();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        for opcion in crate::backend::FORMATS {
+            let activo = opcion.id == elegido.id;
+            if chip(ui, opcion.label, activo, palette).clicked() {
+                app.select_format(opcion.id);
+            }
+        }
+    });
+
+    hint(
+        ui,
+        &format!(
+            "{} · {}",
+            match elegido.kind {
+                crate::backend::Kind::Video => "video",
+                crate::backend::Kind::Audio => "solo audio",
+            },
+            elegido.args.join(" ")
+        ),
+        palette.dim,
+    );
 }
 
 /// El `-o` de yt-dlp, para quien lo quiera tocar.
