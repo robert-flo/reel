@@ -1,6 +1,8 @@
 //! La cola. Es la pantalla principal, no un detalle: una fila por trabajo,
 //! con su estado, su progreso y lo que esta haciendo yt-dlp ahora mismo.
 
+use std::path::{Path, PathBuf};
+
 use egui::{CornerRadius, Stroke};
 use fastframe_fonts::Weight;
 
@@ -44,12 +46,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
 
     let mut cancel: Option<u64> = None;
+    let mut abrir: Option<String> = None;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for job in &jobs {
-                row(ui, app, job, &mut cancel);
+                row(ui, app, job, &mut cancel, &mut abrir);
                 ui.add_space(Metrics::GAP);
             }
         });
@@ -57,9 +60,33 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if let Some(id) = cancel {
         app.backend.send(Command::Cancel { id });
     }
+    if let Some(path) = abrir {
+        revelar(&path);
+    }
 }
 
-fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, cancel: &mut Option<u64>) {
+/// Abre la carpeta del archivo que se bajo, que es lo que uno quiere hacer
+/// despues. El trabajo pesado lo hace el escritorio con `xdg-open`; aca solo
+/// se elige que abrir: la carpeta si se puede, el archivo si no.
+fn revelar(path: &str) {
+    let carpeta = Path::new(path)
+        .parent()
+        .filter(|padre| padre.is_dir())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(path));
+
+    if let Err(error) = std::process::Command::new("xdg-open").arg(&carpeta).spawn() {
+        log::warn!("no pude abrir {}: {error}", carpeta.display());
+    }
+}
+
+fn row(
+    ui: &mut egui::Ui,
+    app: &App,
+    job: &crate::backend::Job,
+    cancel: &mut Option<u64>,
+    abrir: &mut Option<String>,
+) {
     let palette = app.palette;
 
     let (status, status_color, detail) = match &job.state {
@@ -130,6 +157,24 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, cancel: &mut Opt
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
                                     *cancel = Some(job.id);
+                                }
+                                ui.add_space(10.0);
+                            }
+                            // Un trabajo listo ofrece abrir donde quedo.
+                            if let State::Done { path } = &job.state {
+                                let hit = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            "abrir carpeta",
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit.clicked() {
+                                    *abrir = Some(path.clone());
                                 }
                                 ui.add_space(10.0);
                             }
