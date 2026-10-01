@@ -474,10 +474,14 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         // Reanudar lo que quedo a medias. yt-dlp ya lo hace solo cuando
         // encuentra el `.part`, y cancelar lo deja ahi porque la carpeta y la
         // plantilla no cambian; se pide igual para que no dependa de un
-        // default que podria cambiar, y `--no-overwrites` para que un archivo
-        // ya terminado no se baje dos veces.
+        // default que podria cambiar.
+        //
+        // `--no-overwrites` se probo y se saco: es redundante, yt-dlp ya
+        // saltea un archivo que existe. Medido con el mismo archivo en dos
+        // carpetas, una con la bandera y otra sin ella: las dos quedaron
+        // iguales, sin volver a bajar. Poner una bandera que no cambia nada
+        // solo hace creer que hace algo.
         "--continue".into(),
-        "--no-overwrites".into(),
         "--progress-template".into(),
         PROGRESS_TEMPLATE.into(),
         "--progress-template".into(),
@@ -1061,7 +1065,15 @@ mod tests {
         let options = Options::default();
         let (args, _) = download_args("https://ejemplo.test/v", &options);
         assert!(args.iter().any(|arg| arg == "--continue"));
-        assert!(args.iter().any(|arg| arg == "--no-overwrites"));
+    }
+
+    /// `--no-overwrites` se probo y se saco: yt-dlp ya saltea un archivo que
+    /// existe, asi que la bandera no cambiaba nada y solo confundia.
+    #[test]
+    fn no_lleva_banderas_que_no_hacen_nada() {
+        let options = Options::default();
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(!args.iter().any(|arg| arg == "--no-overwrites"));
     }
 
     #[test]
