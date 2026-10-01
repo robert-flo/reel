@@ -207,6 +207,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if let Some((path, dir)) = actions.abrir_carpeta {
         abrir_carpeta(&path, dir.as_deref());
     }
+    if let Some(texto) = actions.copiar_texto {
+        app.copy_to_clipboard(ui.ctx(), &texto);
+    }
 }
 
 /// Abre el archivo con el reproductor del sistema.
@@ -255,6 +258,7 @@ struct RowActions {
     quitar: Option<u64>,
     abrir_archivo: Option<String>,
     abrir_carpeta: Option<(String, Option<PathBuf>)>,
+    copiar_texto: Option<String>,
 }
 
 fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut RowActions) {
@@ -318,9 +322,10 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                         job.media.title.clone()
                     };
                     ui.add(
-                        egui::Label::new(text(title, 13.0, Weight::SemiBold, palette.text))
+                        egui::Label::new(text(&title, 13.0, Weight::SemiBold, palette.text))
                             .truncate(),
-                    );
+                    )
+                    .on_hover_text(&title);
                     ui.add_space(4.0);
                     ui.label(caption(job_format_label(job), &palette));
                 });
@@ -391,6 +396,22 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                             if let State::Done { path } = &job.state {
                                 let es_archivo_real = Path::new(path).is_file();
                                 if es_archivo_real {
+                                    let hit_copiar = ui
+                                        .add(
+                                            egui::Label::new(text(
+                                                "copiar ruta",
+                                                11.0,
+                                                Weight::Regular,
+                                                palette.dim,
+                                            ))
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if hit_copiar.clicked() {
+                                        actions.copiar_texto = Some(path.clone());
+                                    }
+                                    ui.add_space(10.0);
+
                                     let hit_carpeta = ui
                                         .add(
                                             egui::Label::new(text(
@@ -441,6 +462,23 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                                     }
                                     ui.add_space(10.0);
                                 }
+                            }
+                            if let State::Failed { reason } = &job.state {
+                                let hit_copiar = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            "copiar error",
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit_copiar.clicked() {
+                                    actions.copiar_texto = Some(reason.clone());
+                                }
+                                ui.add_space(10.0);
                             }
                             // Quitar trabajo inactivo de la cola
                             if !job.is_active() {

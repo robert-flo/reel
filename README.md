@@ -78,6 +78,17 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   extremo sin necesidad de pantalla ni herramientas externas mediante
   `egui::Context::run_ui`, validando atajos, confirmaciones y renderizado de
   componentes.
+- **Formato de audio m4a (AAC)**: opción para descargar y extraer audio en `.m4a`
+  manteniendo la pista AAC original de los servidores sin pérdida por transcodificación.
+- **Importación por lotes de enlaces**: al pegar múltiples URLs a la vez en la caja
+  de texto (separadas por saltos de línea), se encolan automáticamente en lote.
+- **Arrastrar y soltar archivos**: se pueden arrastrar archivos de texto (`.txt`)
+  con listas de URLs directamente sobre la ventana de Reel para encolarlas todas al instante.
+- **Copiar ruta y copiar error**: acción rápida `copiar ruta` en descargas completadas
+  y `copiar error` en descargas fallidas (tanto en la cola como en la ficha), copiando
+  tanto al portapapeles de la interfaz como al del sistema operativo (`wl-copy`).
+- **Vista previa completa de títulos**: pasar el cursor sobre cualquier título
+  recortado en la ficha o en las filas de la cola muestra el nombre completo en un tooltip.
 
 ### Falta
 
@@ -176,6 +187,7 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 | `Mejor` | el mejor video con el mejor audio, en mp4 |
 | `4K` / `1080p` / `720p` | lo mejor hasta esa altura, en mp4 |
 | `mp3` | solo audio, extraido y con calidad 0 |
+| `m4a` | solo audio, en contenedor m4a (AAC nativo sin pérdida por recodificación) |
 | `opus` | solo audio, en opus |
 
 `metadatos + caratula` agrega los datos del video y la miniatura al archivo.
@@ -185,7 +197,7 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 sitio y las unen en mp4. Con YouTube eso suele dar **av1 de video y opus de
 audio**, que es lo mejor que hay pero no lo abre cualquier reproductor viejo.
 Si el archivo va a un televisor o a un telefono que no los soporte, elegi una
-altura concreta (`720p`) o bajalo en `mp3`. Los subtitulos se bajan y se incrustan en
+altura concreta (`720p`) o bajalo en `mp3` o `m4a`. Los subtitulos se bajan y se incrustan en
 los idiomas que elijas en los ajustes (con fallback automático si solo hay
 subtítulos autogenerados).
 
@@ -215,6 +227,8 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
   predeterminado (`xdg-open`).
 - **Carpeta** abre el directorio donde quedó el archivo. En las filas de
   resumen de listas de reproducción, abre la carpeta de salida configurada.
+- **Copiar ruta** copia la ruta absoluta del archivo descargado al portapapeles.
+- **Copiar error** copia el motivo de falla detallado reportado por yt-dlp/ffmpeg.
 - **Quitar** elimina la fila individual de la cola (para trabajos no activos).
 - **Limpiar terminadas** en la cabecera remueve todas las descargas inactivas
   (listas, canceladas o falladas) de una sola vez.

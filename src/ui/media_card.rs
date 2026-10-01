@@ -27,14 +27,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             .corner_radius(CornerRadius::same(Metrics::RADIUS))
             .inner_margin(egui::Margin::symmetric(18, 14))
             .show(ui, |ui| {
-                ui.label(text(
-                    "no pude leer ese enlace",
-                    13.0,
-                    Weight::Medium,
-                    palette.danger,
-                ));
-                ui.add_space(4.0);
-                ui.label(caption(reason, &palette));
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(text(
+                            "no pude leer ese enlace",
+                            13.0,
+                            Weight::Medium,
+                            palette.danger,
+                        ));
+                        ui.add_space(4.0);
+                        ui.label(caption(&reason, &palette));
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let hit_copy = ui
+                            .add(
+                                egui::Label::new(text(
+                                    "copiar error",
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_copy.clicked() {
+                            app.copy_to_clipboard(ui.ctx(), &reason);
+                        }
+                    });
+                });
             });
         ui.add_space(Metrics::GAP);
         return;
@@ -72,7 +92,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 palette.text,
                             ))
                             .truncate(),
-                        );
+                        )
+                        .on_hover_text(&preview.title);
                         ui.add_space(6.0);
 
                         let mut meta = Vec::new();

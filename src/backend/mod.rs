@@ -81,6 +81,12 @@ pub const FORMATS: &[Format] = &[
         ],
     },
     Format {
+        id: "m4a",
+        label: "m4a",
+        kind: Kind::Audio,
+        args: &["-f", "ba[ext=m4a]/ba/b", "-x", "--audio-format", "m4a"],
+    },
+    Format {
         id: "opus",
         label: "opus",
         kind: Kind::Audio,

@@ -348,6 +348,7 @@ impl App {
     /// ultimo.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         self.handle_shortcuts(ui);
+        self.handle_dropped_files(ui);
         ui::top_bar::show(self, ui);
         ui::status_bar::show(self, ui);
 
@@ -434,6 +435,39 @@ impl App {
         if focus_url {
             ui.ctx()
                 .memory_mut(|m| m.request_focus(egui::Id::new("url_input")));
+        }
+    }
+
+    /// Importar enlaces al arrastrar archivos (como un .txt con URLs) hacia la ventana.
+    fn handle_dropped_files(&mut self, ui: &egui::Ui) {
+        let dropped = ui.input(|i| i.raw.dropped_files.clone());
+        for file in dropped {
+            let path = file.path();
+            if !path.as_os_str().is_empty() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let urls: Vec<String> = content
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
+                        .collect();
+                    for url in urls {
+                        self.enqueue_url_direct(url);
+                    }
+                    continue;
+                }
+            }
+            if let Ok(bytes) = file.bytes() {
+                if let Ok(content) = std::str::from_utf8(&bytes) {
+                    let urls: Vec<String> = content
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
+                        .collect();
+                    for url in urls {
+                        self.enqueue_url_direct(url);
+                    }
+                }
+            }
         }
     }
 
@@ -661,13 +695,62 @@ impl App {
         }
     }
 
-    /// Paso uno: leer el enlace y pintar la ficha. No descarga nada todavia,
-    /// que es justo el punto de tener formatos que elegir.
-    pub fn preview_current_url(&mut self) {
-        let url = self.url.trim().to_string();
-        if url.is_empty() {
+    /// Encola un enlace directo sin necesidad de previsualizar primero.
+    pub fn enqueue_url_direct(&mut self, url: String) {
+        let trimmed = url.trim().to_string();
+        if trimmed.is_empty() {
             return;
         }
+
+        let options = self.options.clone();
+        let media = Media {
+            title: trimmed.clone(),
+            ..Default::default()
+        };
+
+        let id = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.push_ready(trimmed.clone(), options.clone(), media)
+        };
+
+        self.backend.send(Command::Start {
+            id,
+            url: trimmed,
+            options,
+        });
+    }
+
+    /// Paso uno: leer el enlace y pintar la ficha. Si se pegaron multiples
+    /// enlaces a la vez (separados por lineas), se encolan todos directamente.
+    pub fn preview_current_url(&mut self) {
+        let lines: Vec<String> = self
+            .url
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        if lines.is_empty() {
+            return;
+        }
+
+        if lines.len() > 1 {
+            for line in lines {
+                self.enqueue_url_direct(line);
+            }
+            self.url.clear();
+            self.preview = None;
+            self.preview_url = None;
+            self.preview_error = None;
+            self.probing = false;
+            return;
+        }
+
+        let url = lines[0].clone();
 
         {
             let mut queue = self
@@ -830,6 +913,12 @@ impl App {
             .and_then(|out| String::from_utf8(out.stdout).ok())
             .map(|text| text.trim().to_string())
             .filter(|text| !text.is_empty())
+    }
+
+    /// Copia texto tanto al portapapeles de egui como al del sistema (Wayland / wl-copy).
+    pub fn copy_to_clipboard(&self, ctx: &egui::Context, text: &str) {
+        ctx.copy_text(text.to_string());
+        let _ = std::process::Command::new("wl-copy").arg(text).spawn();
     }
 
     pub fn output_dir_label(&self) -> String {
@@ -1267,6 +1356,10 @@ mod tests {
         app.select_format("mp3");
         assert_eq!(app.options.format_id, "mp3");
 
+        app.select_format("m4a");
+        assert_eq!(app.options.format_id, "m4a");
+        assert_eq!(app.settings.format_id, "m4a");
+
         // Subtitulos
         app.toggle_subtitle("es");
         assert!(app.settings.subtitles.contains(&"es".to_string()));
@@ -1306,5 +1399,26 @@ mod tests {
         let q = app.backend.queue.lock().unwrap();
         assert_eq!(q.jobs.len(), 1);
         assert_eq!(q.jobs[0].url, "https://ejemplo.test/lista20");
+    }
+
+    #[test]
+    fn pegar_multiples_enlaces_encola_en_lote() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.url = "https://ejemplo.test/video1\nhttps://ejemplo.test/video2\n  https://ejemplo.test/video3  \n\n".into();
+        app.preview_current_url();
+
+        // Debe haber limpiado url y no dejar preview pendiente
+        assert_eq!(app.url, "");
+        assert!(app.preview.is_none());
+        assert!(!app.probing);
+
+        // Debe haber encolado los 3 enlaces directamente
+        let q = app.backend.queue.lock().unwrap();
+        assert_eq!(q.jobs.len(), 3);
+        assert_eq!(q.jobs[0].url, "https://ejemplo.test/video1");
+        assert_eq!(q.jobs[1].url, "https://ejemplo.test/video2");
+        assert_eq!(q.jobs[2].url, "https://ejemplo.test/video3");
     }
 }
