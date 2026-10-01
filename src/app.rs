@@ -35,12 +35,24 @@ pub enum UpdateState {
     Failed(String),
 }
 
+/// Como se le pregunta la version a una herramienta del sistema.
+type Revisor = fn() -> Result<String, String>;
+
+/// Lo que contestaron las herramientas externas, cada una `None` mientras su
+/// hilo no haya respondido.
+#[derive(Default)]
+pub struct Herramientas {
+    pub ytdlp: Option<Result<String, String>>,
+    pub ffmpeg: Option<Result<String, String>>,
+}
+
 /// Lo que el hilo de actualizacion le cuenta a la interfaz.
 #[derive(Debug)]
 pub enum UpdateMessage {
     State(UpdateState),
-    /// Lo que contesto `yt-dlp --version`.
-    Ytdlp(Result<String, String>),
+    /// Lo que contesto la version de una herramienta: `true` para yt-dlp,
+    /// `false` para ffmpeg.
+    Version(bool, Result<String, String>),
     /// Lo que pidio otra instancia de la app.
     Aviso(crate::instancia::Aviso),
 }
@@ -69,10 +81,10 @@ pub struct App {
     /// Lo pidio "Pegar y descargar" del tray: cuando el vistazo llegue, el
     /// trabajo entra a la cola solo, sin pasar por el boton.
     enqueue_when_probed: bool,
-    /// Que dijo `yt-dlp --version`, o por que no se puede usar. Se averigua en
-    /// un hilo al arrancar para poder avisar antes de que alguien apriete
-    /// "descargar" y se coma el error del proceso.
-    pub ytdlp: Option<Result<String, String>>,
+    /// Que contestaron las herramientas del sistema. Se averigua en un hilo al
+    /// arrancar para poder avisar antes de que alguien apriete "descargar" y se
+    /// coma el error del proceso.
+    pub herramientas: Herramientas,
     /// Una lista grande quedo esperando que se confirme. El primer toque en el
     /// boton solo pregunta; el segundo encola. Una lista de 19 videos de
     /// YouTube son gigabytes, y encolarla por error cuesta ancho de banda y
@@ -165,7 +177,7 @@ impl App {
             probing: false,
             enqueue_when_probed: false,
             confirmar_lista: None,
-            ytdlp: None,
+            herramientas: Herramientas::default(),
             activos_antes: 0,
             paste_requested: false,
             backend,
@@ -379,7 +391,13 @@ impl App {
         for message in mensajes {
             match message {
                 UpdateMessage::State(state) => self.update = state,
-                UpdateMessage::Ytdlp(resultado) => self.ytdlp = Some(resultado),
+                UpdateMessage::Version(es_ytdlp, resultado) => {
+                    if es_ytdlp {
+                        self.herramientas.ytdlp = Some(resultado);
+                    } else {
+                        self.herramientas.ffmpeg = Some(resultado);
+                    }
+                }
                 UpdateMessage::Aviso(aviso) => match aviso {
                     // Otra copia de la app le paso el enlace a esta: se encola
                     // aca, y la otra se cierra sin abrir ventana.
@@ -771,13 +789,20 @@ impl App {
         self.update_tx.clone()
     }
 
-    /// Pregunta por yt-dlp en un hilo: arrancar la ventana no puede depender de
-    /// lanzar un proceso.
-    pub fn check_ytdlp(&self) {
-        let tx = self.update_tx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(UpdateMessage::Ytdlp(crate::backend::ytdlp::version()));
-        });
+    /// Pregunta por las herramientas en un hilo: arrancar la ventana no puede
+    /// depender de lanzar procesos. Son dos porque ffmpeg hace falta para unir
+    /// pistas y extraer audio, y conviene saberlo antes de bajar 200 MB.
+    pub fn check_herramientas(&self) {
+        let revisores: [(bool, Revisor); 2] = [
+            (true, crate::backend::ytdlp::version),
+            (false, crate::backend::ytdlp::version_ffmpeg),
+        ];
+        for (es_ytdlp, revisar) in revisores {
+            let tx = self.update_tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(UpdateMessage::Version(es_ytdlp, revisar()));
+            });
+        }
     }
 
     pub fn hides_to_tray(&self) -> bool {

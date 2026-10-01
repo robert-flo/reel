@@ -43,35 +43,70 @@ pub(crate) fn ytdlp_binary() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("yt-dlp"))
 }
 
-/// La version de yt-dlp, o por que no se puede usar.
+/// ffmpeg del PATH, con la misma salida que yt-dlp: `REEL_FFMPEG` apunta a
+/// otro, que es como se prueba que pasa cuando falta.
+pub(crate) fn ffmpeg_binary() -> PathBuf {
+    std::env::var_os("REEL_FFMPEG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("ffmpeg"))
+}
+
+/// Pregunta la version de una herramienta del sistema. Sirve para avisar al
+/// arrancar y no cuando el usuario ya apreto "descargar".
 ///
-/// Sirve para avisar al arrancar y no cuando el usuario ya apreto "descargar":
-/// un binario que falta o que no es yt-dlp se descubre mejor antes.
-pub(crate) fn version() -> Result<String, String> {
-    let salida = Proc::new(ytdlp_binary())
-        .arg("--version")
+/// `nombre` es lo que se le muestra a la persona y tambien el binario que se
+/// busca en el PATH. `argumento` es como pide su version, que no es igual en
+/// todas: yt-dlp usa `--version` y ffmpeg `-version`.
+pub(crate) fn version_de(nombre: &str, binario: &Path, argumento: &str) -> Result<String, String> {
+    let salida = Proc::new(binario)
+        .arg(argumento)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .map_err(|error| match error.kind() {
             std::io::ErrorKind::NotFound => {
-                "no encuentro yt-dlp: instalalo (en Arch, `sudo pacman -S yt-dlp`)".to_string()
+                format!("no encuentro {nombre}: instalalo (en Arch, `sudo pacman -S {nombre}`)")
             }
-            _ => format!("no pude ejecutar yt-dlp: {error}"),
+            _ => format!("no pude ejecutar {nombre}: {error}"),
         })?;
 
     if !salida.status.success() {
         return Err(format!(
-            "yt-dlp no contesto su version (salio con {}): revisa la instalacion",
+            "{nombre} no contesto su version (salio con {}): revisa la instalacion",
             salida.status
         ));
     }
 
-    let version = String::from_utf8_lossy(&salida.stdout).trim().to_string();
-    if version.is_empty() {
-        return Err("yt-dlp no dijo su version: el binario del PATH no parece yt-dlp".into());
+    let texto = String::from_utf8_lossy(&salida.stdout);
+    let primera = texto.lines().next().unwrap_or("").trim().to_string();
+    if primera.is_empty() {
+        return Err(format!(
+            "{nombre} no dijo su version: el binario del PATH no parece {nombre}"
+        ));
     }
-    Ok(version)
+    Ok(primera)
+}
+
+/// La version de yt-dlp, o por que no se puede usar. Es el que baja todo.
+pub(crate) fn version() -> Result<String, String> {
+    version_de("yt-dlp", &ytdlp_binary(), "--version")
+}
+
+/// La version de ffmpeg, o por que no se puede usar.
+///
+/// Hace falta para unir pistas, extraer audio e incrustar metadatos, o sea que
+/// sin el los formatos de video y `mp3` fallan al final. Vale avisarlo al
+/// arrancar, junto con yt-dlp, y no cuando la descarga ya bajo 200 MB.
+pub(crate) fn version_ffmpeg() -> Result<String, String> {
+    // La primera linea es "ffmpeg version n9.0.2 Copyright (c) ..."; la parte
+    // util es la version, no la linea entera.
+    version_de("ffmpeg", &ffmpeg_binary(), "-version").map(|linea| {
+        linea
+            .strip_prefix("ffmpeg version ")
+            .and_then(|resto| resto.split_whitespace().next())
+            .unwrap_or(&linea)
+            .to_string()
+    })
 }
 
 fn default_dir(kind: Kind) -> PathBuf {
@@ -1039,6 +1074,18 @@ mod tests {
 
         let vacia = serde_json::json!({ "title": "url vacia", "url": "" });
         assert!(entrada_de_lista(&vacia).is_none());
+    }
+
+    /// La version de ffmpeg viene dentro de una linea larga: hay que sacarle
+    /// el numero, no mostrar el aviso de copyright entero.
+    #[test]
+    fn saca_la_version_de_ffmpeg_de_su_linea() {
+        let linea = "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers";
+        let version = linea
+            .strip_prefix("ffmpeg version ")
+            .and_then(|resto| resto.split_whitespace().next())
+            .unwrap_or(linea);
+        assert_eq!(version, "n9.0.2");
     }
 
     /// Los errores que se repiten tienen que decir que hacer, no solo que

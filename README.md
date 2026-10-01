@@ -42,8 +42,12 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   Verificado con una lista real de 19 videos.
 - **Una sola instancia**: la segunda le pasa su pedido a la que corre. Sin esto
   dos copias peleaban por el icono de bandeja y por `app.ron`.
-- **Avisa al terminar la cola** por `notify-send`, y avisa si falta `yt-dlp`
-  al arrancar.
+- **Avisa al terminar la cola** por `notify-send`.
+- **Al arrancar revisa las dos herramientas** que necesita, cada una en su
+  hilo: `yt-dlp`, sin el que no hay descargas, y `ffmpeg`, sin el que no se unen
+  pistas ni se extrae audio. Si andan, el pie muestra las versiones; si falta
+  alguna, avisa en ambar nombrando **esa** herramienta. Verificado apuntando
+  `REEL_FFMPEG` y `REEL_YTDLP` a rutas que no existen.
 - **La persistencia del tamano de ventana** funciona: verificado en flotante,
   1400x900 se repone. En mosaico no se nota porque manda el compositor.
 
@@ -54,9 +58,6 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   de su logica, pero nadie los apreto: accionar la interfaz pediria un automata
   de entrada (`ydotool` no esta instalado) y no se agrego una dependencia de
   test solo para eso. **Es lo mas util que puede hacer quien siga.**
-- **`ffmpeg` no se valida al arrancar.** El postprocesado lo necesita y la app
-  solo le pregunta la version a `yt-dlp`. Sin `ffmpeg`, `Mejor`, `1080p` y `mp3`
-  fallan al final en vez de avisar al principio. `make doctor` si lo chequea.
 - **La actualizacion nunca se probo de verdad**, porque el repositorio no tiene
   releases publicados. El 404 se trata como "todavia no hay versiones" y el pie
   se calla, pero el camino de descargar e instalar una version nueva esta sin
@@ -233,10 +234,22 @@ desde el tray.
 
 ## Cuando algo no anda
 
-Al arrancar, la app le pregunta la version a `yt-dlp` en un hilo. Si anda, el
-pie lo dice (`yt-dlp 2026.08.19`); si falta o el binario del PATH no es yt-dlp,
-avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que lo
-descubras cuando ya apretaste `descargar`.
+Al arrancar, la app le pregunta la version a las dos herramientas que necesita,
+cada una en su hilo, y el pie lo dice: `yt-dlp 2026.08.19 · ffmpeg n9.0.2`.
+
+- **yt-dlp** baja todo. Sin el no hay descargas.
+- **ffmpeg** une pistas, extrae audio e incrusta metadatos. Sin el, `Mejor`,
+  `1080p` y `mp3` fallarian al final; por eso se avisa al principio.
+
+Si falta alguna, el pie lo dice en ambar nombrando esa herramienta (`sin ffmpeg
+no puedo unir ni convertir`) y el motivo queda en el hover, en vez de dejar que
+lo descubras cuando ya bajaste 200 MB.
+
+Para probar esos avisos, o para usar otros binarios:
+
+```sh
+REEL_YTDLP=/ruta/a/yt-dlp REEL_FFMPEG=/ruta/a/ffmpeg cargo run
+```
 
 Cuando una descarga falla, la fila muestra el error de yt-dlp tal cual —es la
 unica forma de reportarlo— y, si es uno de los que se repiten, tambien que
