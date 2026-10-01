@@ -195,6 +195,15 @@ Y para abrir la app con el panel de ajustes ya puesto:
 cargo run -- --settings
 ```
 
+Para mandar un enlace directo a la cola, sin abrir la ficha ni apretar nada:
+
+```sh
+cargo run -- --yoink "https://..."
+```
+
+Es el mismo camino que `Pegar y descargar` del tray, asi que sirve para un
+atajo del escritorio o para llamarlo desde un script.
+
 ## Como se prueba
 
 Antes de un commit, `make verify` corre el formato, clippy con los warnings como

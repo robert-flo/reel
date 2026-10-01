@@ -54,6 +54,9 @@ fn main() -> anyhow::Result<()> {
     // lo que quiere un acceso directo del menu.
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
     let open_settings = take_flag(&mut arguments, "--settings");
+    // `--yoink URL`: lee el enlace y lo encola sin abrir nada mas. Sirve para
+    // un atajo del escritorio o para mandarle algo desde un script.
+    let yoink = take_flag_value(&mut arguments, "--yoink");
 
     // Primero el ayudante de actualizacion, que puede quedarse con los
     // argumentos y terminar sin abrir ventana.
@@ -83,6 +86,9 @@ fn main() -> anyhow::Result<()> {
     app.check_ytdlp();
     if open_settings {
         app.open_settings();
+    }
+    if let Some(url) = yoink {
+        app.yoink(url);
     }
 
     if let Some(receipt) = launch.receipt {
@@ -115,6 +121,19 @@ fn take_flag(arguments: &mut Vec<String>, flag: &str) -> bool {
     let before = arguments.len();
     arguments.retain(|argument| argument != flag);
     arguments.len() != before
+}
+
+/// Saca una bandera con su valor, como `--yoink URL`. Devuelve `None` cuando
+/// la bandera no esta o no trae nada detras.
+fn take_flag_value(arguments: &mut Vec<String>, flag: &str) -> Option<String> {
+    let at = arguments.iter().position(|argument| argument == flag)?;
+    // Se saca la bandera y, si hay, el valor que la sigue.
+    arguments.remove(at);
+    if at < arguments.len() {
+        Some(arguments.remove(at)).filter(|value| !value.trim().is_empty())
+    } else {
+        None
+    }
 }
 
 /// `--download-selfcheck MODO`, para las pruebas de la cola.

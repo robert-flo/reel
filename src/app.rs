@@ -424,6 +424,21 @@ impl App {
         avisar("reel", &cuerpo);
     }
 
+    /// Lee un enlace y lo encola solo, sin pasar por el boton. Es lo que usan
+    /// "Pegar y descargar" del tray y `reel --yoink URL`: el mismo camino, con
+    /// el enlace viniendo de otro lado.
+    pub fn yoink(&mut self, url: String) {
+        if url.trim().is_empty() {
+            return;
+        }
+        self.url = url;
+        self.enqueue_when_probed = true;
+        // Si el panel estaba abierto, se cierra: el enlace viene a la cola, no
+        // a que alguien lo mire.
+        self.settings_open = false;
+        self.preview_current_url();
+    }
+
     /// "Pegar y descargar" del tray: pega, lee el enlace y deja marcado que el
     /// trabajo entre a la cola solo. Antes esto solo levantaba una bandera que
     /// nadie miraba.
@@ -435,12 +450,7 @@ impl App {
             log::warn!("no habia nada para pegar en el portapapeles");
             return;
         };
-        self.url = clipped;
-        self.enqueue_when_probed = true;
-        // Si el panel estaba abierto, se cierra: el enlace viene a la cola,
-        // no a que alguien lo mire.
-        self.settings_open = false;
-        self.preview_current_url();
+        self.yoink(clipped);
     }
 
     fn pump_tray(&mut self) {
