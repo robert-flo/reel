@@ -31,12 +31,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let submitted = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
 
         ui.add_space(Metrics::GAP);
-        let paste = ui.add_sized(
+        let second_label = if !app.url.is_empty() {
+            "limpiar"
+        } else {
+            "pegar"
+        };
+        let second_btn = ui.add_sized(
             Vec2::new(button_width, height),
-            egui::Button::new(text("pegar", 13.0, Weight::Regular, palette.dim)),
+            egui::Button::new(text(second_label, 13.0, Weight::Regular, palette.dim)),
         );
-        if paste.clicked() {
-            if let Some(clipped) = app.clipboard_text(ui.ctx()) {
+        if second_btn.clicked() {
+            if !app.url.is_empty() {
+                app.url.clear();
+                app.preview = None;
+                app.preview_url = None;
+                app.preview_error = None;
+                app.probing = false;
+                app.confirmar_lista = None;
+            } else if let Some(clipped) = app.clipboard_text(ui.ctx()) {
                 let trimmed = clipped.trim();
                 if !trimmed.is_empty() {
                     app.url = trimmed.to_string();

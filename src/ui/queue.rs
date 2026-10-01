@@ -103,6 +103,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         if jobs.len() > 3 {
             ui.add_space(6.0);
             let search_edit = egui::TextEdit::singleline(&mut app.queue_search)
+                .id(egui::Id::new("queue_search_input"))
                 .hint_text(text("buscar...", 11.0, Weight::Regular, palette.dim))
                 .font(Weight::Regular.font_id(11.0))
                 .margin(egui::Margin::symmetric(6, 2))

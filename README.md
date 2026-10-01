@@ -189,7 +189,8 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 | `Ctrl+,` | Abrir o cerrar el panel de ajustes |
 | `Ctrl+Q` | Salir de la aplicación |
 | `Ctrl+L` | Enfocar el campo de enlace de la barra superior |
-| `Escape` | Cerrar modal de ajustes, o limpiar la ficha y el campo de enlace |
+| `Ctrl+F` | Enfocar el buscador de la cola de descargas |
+| `Escape` | Cerrar modal de ajustes, limpiar búsqueda activa o vaciar el campo de enlace y su ficha |
 | `Ctrl+V` | Pegar enlace y buscar ficha automáticamente (sin foco en campo de texto) |
 
 ### Los formatos

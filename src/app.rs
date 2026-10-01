@@ -394,11 +394,13 @@ impl App {
     /// - `Ctrl+,`: abrir/cerrar ajustes
     /// - `Ctrl+Q`: salir
     /// - `Ctrl+L`: enfocar el campo de enlace
-    /// - `Escape`: cerrar ajustes o limpiar url/vista previa
+    /// - `Ctrl+F`: enfocar el buscador de la cola
+    /// - `Escape`: cerrar ajustes o limpiar url/vista previa/busqueda
     /// - `Ctrl+V` (sin foco en texto): pegar url y obtener vista previa
     fn handle_shortcuts(&mut self, ui: &egui::Ui) {
         let foco_en_texto = ui.memory(|m| m.focused().is_some());
         let mut focus_url = false;
+        let mut focus_search = false;
         ui.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
                 if self.settings_open {
@@ -415,6 +417,10 @@ impl App {
 
             if !foco_en_texto && i.modifiers.command && i.key_pressed(egui::Key::L) {
                 focus_url = true;
+            }
+
+            if !foco_en_texto && i.modifiers.command && i.key_pressed(egui::Key::F) {
+                focus_search = true;
             }
 
             if i.key_pressed(egui::Key::Escape) {
@@ -444,6 +450,10 @@ impl App {
         if focus_url {
             ui.ctx()
                 .memory_mut(|m| m.request_focus(egui::Id::new("url_input")));
+        }
+        if focus_search {
+            ui.ctx()
+                .memory_mut(|m| m.request_focus(egui::Id::new("queue_search_input")));
         }
     }
 
@@ -1533,5 +1543,33 @@ mod tests {
         out.textures_delta.clear();
 
         assert_eq!(app.queue_search, "");
+    }
+
+    #[test]
+    fn atajo_ctrl_f_enfoca_buscador() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        let cmd = egui::Modifiers::COMMAND;
+
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::ModifiersChanged(cmd));
+        input.events.push(egui::Event::Key {
+            key: egui::Key::F,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: cmd,
+        });
+
+        let mut out = ctx.run_ui(input, |ui| {
+            app.handle_shortcuts(ui);
+        });
+        out.textures_delta.clear();
+
+        assert_eq!(
+            ctx.memory(|m| m.focused()),
+            Some(egui::Id::new("queue_search_input"))
+        );
     }
 }
