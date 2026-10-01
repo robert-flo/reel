@@ -8,7 +8,16 @@ description = "Pegas un enlace, elegis un formato, y la cola hace el resto."
 repository = "https://github.com/robert-flo/reel"
 
 [dependencies]
-eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+# `persistence` es lo que hace que la ventana recuerde su tamano y su
+# posicion: `persist_window` ya viene en true, pero sin la feature no hace
+# nada. Trae `ron` y `serde`, que es poco al lado de lo que ya pesa eframe.
+eframe = { version = "0.36", default-features = false, features = [
+    "glow",
+    "wayland",
+    "x11",
+    "default_fonts",
+    "persistence",
+] }
 egui = "0.36"
 # "http" es lo que sirve las miniaturas remotas; sin el, egui pinta su
 # marca de error en vez de la imagen.

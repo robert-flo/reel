@@ -19,22 +19,23 @@ use app::{App, APP_NAME};
 
 struct Window {
     app: fastframe_shell::Held<App>,
-    recovery_checked: bool,
 }
 
 impl eframe::App for Window {
     // `logic` corre antes de dibujar y recibe el Context: es donde van las
     // cosas de ventana, no de interfaz.
-    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if !std::mem::replace(&mut self.recovery_checked, true) {
-            fastframe_shell::window::recover_offscreen(ctx, frame);
-        }
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.app.tick(ctx);
     }
 
     // En egui 0.36 la app recibe un `Ui` raiz y los paneles se muestran
     // dentro de el, en vez de colgar del Context.
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // Se comprueba cada vez y no una sola vez: fastframe-shell vuelve a
+        // crear la ventana cada vez que se muestra desde el tray, asi que un
+        // "ya lo revise" dejaba sin revisar justo las ventanas siguientes.
+        // `recover_offscreen` no hace nada en Wayland y es barato en el resto.
+        fastframe_shell::window::recover_offscreen(ui.ctx(), frame);
         self.app.ui(ui);
     }
 }
@@ -98,10 +99,7 @@ fn main() -> anyhow::Result<()> {
                 Box::new(move |cc| {
                     let mut app = lease.take(&cc.egui_ctx);
                     app.attach(&cc.egui_ctx);
-                    Ok(Box::new(Window {
-                        app,
-                        recovery_checked: false,
-                    }))
+                    Ok(Box::new(Window { app }))
                 }),
             )
         })
@@ -131,13 +129,35 @@ fn selfcheck_mode() -> Option<String> {
     None
 }
 
+/// Como se abre la ventana.
+///
+/// El tamano de aca es el del primer arranque: con la feature `persistence`,
+/// eframe guarda el que dejo el usuario y lo repone. El icono es el mismo que
+/// el del tray, dibujado en `icon.rs`, y `app_id` es ademas el nombre con el
+/// que el escritorio reconoce la ventana (lo que Hyprland matchea en sus
+/// reglas) y el directorio donde eframe guarda ese estado.
 fn native_options() -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
             .with_app_id("reel")
             .with_inner_size([1200.0, 780.0])
-            .with_min_inner_size([760.0, 520.0]),
+            .with_min_inner_size([760.0, 520.0])
+            .with_icon(window_icon()),
+        // Solo decide la posicion del primer arranque: despues manda lo que
+        // haya guardado la persistencia.
+        centered: true,
         ..Default::default()
+    }
+}
+
+/// El icono de la ventana, del mismo dibujo que el del tray. El lado tiene que
+/// ser multiplo de 4, como pide `IconData`.
+fn window_icon() -> egui::IconData {
+    const LADO: usize = 256;
+    egui::IconData {
+        rgba: crate::icon::app_icon_rgba(LADO),
+        width: LADO as u32,
+        height: LADO as u32,
     }
 }

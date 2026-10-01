@@ -41,6 +41,21 @@ con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
 pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
 `abrir carpeta`.
 
+## La ventana
+
+Se abre centrada la primera vez, con el icono de la app (el mismo del tray) y
+1200x780. eframe guarda su estado en `~/.local/share/reel/app.ron`, asi que el
+tamano que dejo el usuario se repone en el arranque siguiente.
+
+Ojo con lo que eso significa en Wayland: el compositor manda. En Hyprland, que
+es de mosaico, la ventana ocupa lo que le toca y ni la posicion ni el tamano
+que guardemos se aplican; el estado sirve sobre todo para la memoria de egui.
+En X11 y en ventanas flotantes si se repone donde estaba.
+
+El aviso de "ventana fuera de pantalla" se comprueba en cada ventana y no una
+sola vez: fastframe-shell vuelve a crear la ventana cada vez que se muestra
+desde el tray.
+
 Al arrancar, la app le pregunta la version a `yt-dlp` en un hilo. Si anda, el
 pie lo dice (`yt-dlp 2026.08.19`); si falta o el binario del PATH no es yt-dlp,
 avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que el
