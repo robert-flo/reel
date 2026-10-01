@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=reel
+GenericName=Descargador de video
+Comment=Pega un enlace, elige un formato, y la cola hace el resto
+Exec=reel %u
+Icon=reel
+Terminal=false
+Categories=AudioVideo;Network;Utility;
+Keywords=video;audio;descargar;yt-dlp;youtube;
+StartupWMClass=reel
+MimeType=x-scheme-handler/reel;
