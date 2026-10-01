@@ -7,39 +7,96 @@ Una app de escritorio nativa para descargar video y audio, construida con
 El trabajo pesado lo hace [yt-dlp](https://github.com/yt-dlp/yt-dlp), que
 soporta 1800 y pico de sitios, asi que esto no es solo YouTube.
 
-> Estado: esqueleto avanzado. La interfaz, el cableado de fastframe y el panel
-> de ajustes estan puestos; la cola corre contra yt-dlp de verdad. Todavia no
-> hay releases.
+> Estado: esqueleto avanzado. La interfaz, el cableado de fastframe, el panel de
+> ajustes y la cola concurrente estan puestos y probados contra yt-dlp de
+> verdad. Todavia no hay releases.
 
-## Ajustes
+## Lo que hace
 
-El boton `ajustes` de la esquina, o `reel --settings`, abre el panel. Lo que
-se elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
+- **La cola es la pantalla principal**, no un detalle. Hasta tres descargas a la
+  vez, cada una con su progreso, su velocidad y su tiempo restante.
+- **La fila dice la verdad**: `en espera` hasta que yt-dlp arranca de verdad,
+  `descargando`, `esperando ffmpeg` mientras une pistas o extrae audio, y `listo`
+  con el archivo que quedo.
+- **Cancelar mata el proceso** y deja el trabajo en `cancelado`, no en `listo`.
+  Lo bajado queda en un `.part`, asi que **reintentar reanuda** donde iba.
+- **Ajustes que duran**: carpeta de salida, formato, plantilla del nombre,
+  cookies del navegador, subtitulos y tema, guardados en disco.
+- **Sigue el tema de Omarchy en vivo**, con la revelacion desde el centro que
+  hace el propio escritorio.
+- **Vive en el tray**: cerrar la ventana no mata la cola.
+- **Avisa cuando termina**, una vez al vaciarse la cola, no una por archivo.
 
-- **Carpeta de salida**: vacia usa `~/Videos` para video y `~/Music` para
-  audio, que es lo que elige yt-dlp. Acepta `~` y `$HOME`, y avisa si la
-  carpeta no existe, es un archivo o es de solo lectura.
-- **Formato**: el que se va a bajar. Se elige en la ficha cuando hay un enlace
-  pegado, pero tambien es un ajuste: el que queda es el que arranca la proxima
-  vez, en vez de volver siempre a "Mejor".
-- **Nombre del archivo**: la plantilla de `-o` de yt-dlp. Vacia usa
-  `%(title).120s.%(ext)s`.
-- **Cookies del navegador**: `--cookies-from-browser`, para contenido con
-  sesion. La lista sale de los navegadores que hay en la maquina, y el que
-  viene marcado es el que el escritorio tiene por defecto.
-- **Subtitulos**: los idiomas que se bajan y se incrustan. Los comunes
-  (`es`, `en`, `pt`, `fr`) son un toque y los demas se escriben a mano como
-  `de, it`, que es lo que termina en `--sub-langs`.
-- **Tema**: seguir el tema de Omarchy en vivo, o clavar una de las paletas
-  compartidas. La eleccion tambien se recuerda.
+## Lo basico
+
+1. Pega el enlace y apreta `buscar` (o Enter). La app lee el enlace y muestra la
+   ficha con el titulo, el autor, la duracion y los formatos.
+2. Elegi el formato en la ficha: `Mejor`, `4K`, `1080p`, `720p`, `mp3` u `opus`.
+3. Ajusta las opciones de la ficha si hace falta: `capitulos`,
+   `metadatos + caratula` y `subtitulos`.
+4. `descargar` lo manda a la cola. La ficha se queda puesta, asi que podes
+   encolar otra calidad del mismo enlace.
+
+Si estas en otro lado y queres mandar algo directo, el menu del tray tiene
+`Pegar y descargar`: agarra el portapapeles, lee el enlace y lo encola solo.
+
+### Los formatos
+
+| Formato | Que baja |
+|---|---|
+| `Mejor` | el mejor video con el mejor audio, en mp4 |
+| `4K` / `1080p` / `720p` | lo mejor hasta esa altura, en mp4 |
+| `mp3` | solo audio, extraido y con calidad 0 |
+| `opus` | solo audio, en opus |
+
+`metadatos + caratula` agrega los datos del video y la miniatura al archivo.
+`capitulos` los incrusta (solo video). Los subtitulos se bajan y se incrustan en
+los idiomas que elijas en los ajustes.
 
 ## La cola
 
-Varios trabajos bajan a la vez, cada uno en su hilo, y la fila dice lo que
-esta pasando de verdad: `en espera` hasta que yt-dlp arranca, `descargando`
-con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
-pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
-`abrir carpeta`.
+Cada fila trae el titulo, el formato elegido, el estado y la barra de progreso.
+Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
+
+- **Cancelar** corta el trabajo. El proceso se mata de verdad y lo bajado queda
+  en disco.
+- **Reintentar** vuelve a pedir el trabajo con los mismos argumentos, que es lo
+  que hace que yt-dlp **reanude** el `.part` en vez de empezar de cero. Esta en
+  cada fila terminada y, cuando hay varios, como `reintentar todo` en la
+  cabecera: es lo que uno quiere despues de que se caiga la red.
+- **Abrir carpeta** abre donde quedo el archivo.
+
+### Cuantos a la vez
+
+Como mucho `MAX_CONCURRENTES` (tres). Lo que sobra espera su lugar en vez de
+lanzar treinta yt-dlp y treinta ffmpeg contra la maquina. El tope esta en
+`src/backend/ytdlp.rs` si lo queres cambiar.
+
+## Ajustes
+
+El boton `ajustes` de la esquina, o `reel --settings`, abre el panel. Lo que se
+elige ahi se guarda en `~/.config/reel/settings.json` y sobrevive al cierre:
+
+- **Carpeta de salida**: vacia usa `~/Videos` para video y `~/Music` para audio,
+  que es lo que elige yt-dlp. Acepta `~` y `$HOME`, y avisa si la carpeta no
+  existe, es un archivo o es de solo lectura.
+- **Formato**: el que se va a bajar. Se elige en la ficha cuando hay un enlace
+  pegado, pero tambien es un ajuste: el que queda es el que arranca la proxima
+  vez, en vez de volver siempre a `Mejor`.
+- **Nombre del archivo**: la plantilla de `-o` de yt-dlp. Vacia usa
+  `%(title).120s.%(ext)s`.
+- **Subtitulos**: los idiomas que se bajan y se incrustan. Los comunes (`es`,
+  `en`, `pt`, `fr`) son un toque y los demas se escriben a mano como `de, it`,
+  que es lo que termina en `--sub-langs`.
+- **Cookies del navegador**: `--cookies-from-browser`, para contenido con
+  sesion. La lista sale de los navegadores que hay en la maquina, y el que viene
+  marcado es el que el escritorio tiene por defecto.
+- **Tema**: seguir el tema de Omarchy en vivo, o clavar una de las paletas
+  compartidas, con muestra de colores. La eleccion tambien se recuerda.
+
+Los campos de texto se confirman al salir del campo o al cerrar el panel, para
+no validar una ruta a medio tipear. Un `settings.json` roto avisa al log y la
+app arranca con los valores por defecto en vez de no abrir.
 
 ## La ventana
 
@@ -47,62 +104,25 @@ Se abre centrada la primera vez, con el icono de la app (el mismo del tray) y
 1200x780. eframe guarda su estado en `~/.local/share/reel/app.ron`, asi que el
 tamano que dejo el usuario se repone en el arranque siguiente.
 
-Ojo con lo que eso significa en Wayland: el compositor manda. En Hyprland, que
-es de mosaico, la ventana ocupa lo que le toca y ni la posicion ni el tamano
-que guardemos se aplican; el estado sirve sobre todo para la memoria de egui.
-En X11 y en ventanas flotantes si se repone donde estaba.
+Ojo con lo que eso significa en Wayland: **el compositor manda**. En Hyprland,
+que es de mosaico, la ventana ocupa lo que le toca y ni la posicion ni el tamano
+que guardemos se aplican; el estado sirve sobre todo para la memoria de egui. En
+X11 y en ventanas flotantes si se repone donde estaba.
 
 El aviso de "ventana fuera de pantalla" se comprueba en cada ventana y no una
 sola vez: fastframe-shell vuelve a crear la ventana cada vez que se muestra
 desde el tray.
 
+## Cuando algo no anda
+
 Al arrancar, la app le pregunta la version a `yt-dlp` en un hilo. Si anda, el
 pie lo dice (`yt-dlp 2026.08.19`); si falta o el binario del PATH no es yt-dlp,
-avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que el
-usuario lo descubra cuando ya apreto "descargar".
+avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que lo
+descubras cuando ya apretaste `descargar`.
 
-Cuando la cola deja de tener trabajo, la app avisa por el escritorio con
-`notify-send`. Avisa una vez, no por archivo: al encolar diez enlaces, diez
-notificaciones serian una lluvia justo cuando el usuario esta mirando la
-ventana.
+`make doctor` dice que falta en el sistema para que la app funcione.
 
-El paso de postprocesado lo cuenta yt-dlp con su `postprocess:`
-`--progress-template`, no adivinando sus mensajes: unir pistas, extraer el
-audio y poner la caratula salen de ahi. Antes se buscaba `[Merger]` en el
-texto, lo que tenia dos problemas: si yt-dlp cambiaba el mensaje la fila dejaba
-de avisar en silencio, y ademas esos mensajes van por stderr, que no se leia.
-
-Un trabajo que ya termino —bien, mal o cancelado— ofrece `reintentar`, y la
-cabecera de la cola ofrece `reintentar todo` cuando hay varios, que es lo que
-uno quiere despues de que se caiga la red. Al reintentar se piden los mismos
-argumentos, asi que **yt-dlp reanuda** el `.part` que quedo en la carpeta en vez
-de empezar de cero: cancelar no borra lo bajado. Se pide `--continue` y
-`--no-overwrites` de forma explicita para no depender de que el default de
-yt-dlp siga siendo reanudar.
-
-Corren como mucho `MAX_CONCURRENTES` (tres) a la vez. Lo que sobre espera su
-lugar en vez de lanzar treinta yt-dlp y treinta ffmpeg contra la maquina.
-Cancelar mata el proceso de verdad y deja el trabajo en `cancelado`, no en
-`listo`.
-
-Todo eso se prueba sin bajar nada y sin red, con un yt-dlp de mentira:
-
-```sh
-make selfcheck
-```
-
-Mide que dos trabajos se solapen, que el estado de la fila no mienta, que el
-tope se respete, que cancelar mate al hijo, que un trabajo fallado se pueda
-reintentar y que nadie pase de "cancelado" a "listo".
-
-Antes de un commit, `make verify` corre el formato, clippy con los warnings
-como errores y todas las pruebas. `make selfcheck` corre solo las de la cola.
-
-`make selfcheck-net` es la unica que sale a internet: usa el yt-dlp de verdad
-para comprobar el contrato que las demas no pueden, porque el yt-dlp de mentira
-acepta cualquier flag. Lee los metadatos de un video libre, le pasa los mismos
-argumentos que armaria la app (en seco, con `--skip-download`) y confirma que
-el progreso llega con la forma que la cola sabe leer.
+El log y el registro de pánicos quedan en `~/.local/state/reel/`.
 
 ## Por que existe
 
@@ -115,38 +135,23 @@ lo pone en una ventana donde la cola es la pantalla principal.
 | | yoinks | plugin de barra | reel |
 |---|---|---|---|
 | Varias descargas a la vez | no | no | si, hasta 3, con progreso por item |
+| Reanudar lo cortado | no | no | si, reintentar reanuda el `.part` |
 | Carpeta y nombre de salida | fijos | fijos | configurables |
 | Cookies del navegador | no | no | si |
-| Capitulos y subtitulos | no | no | si |
-| Estado de postprocesado | invisible | invisible | visible |
+| Subtitulos | no | no | si, con los idiomas que elijas |
+| Estado de postprocesado | invisible | invisible | visible, con el paso que corre |
 | Sigue el tema del escritorio | no | si (en la barra) | si (Omarchy, en vivo) |
+| Vive en el tray | no | si | si, con la cola corriendo |
 
-## Que pone fastframe
+## Donde guarda las cosas
 
-Casi todo lo que no es la interfaz. Esa es la idea de fastframe: se queda con
-lo que es igual en toda app de escritorio, y la app se queda con su interfaz.
-
-- `fastframe-fonts` y `fastframe-text`: Inter en cuatro pesos, fuentes
-  instaladas para los alfabetos que Inter no cubre, y el hinting y
-  antialiasing que use el escritorio. Esta en `src/fonts.rs`.
-- `fastframe-theme`: paletas JSON, las ocho paletas compartidas, y seguir el
-  tema de Omarchy en vivo con notificaciones del filesystem. La paleta de la
-  app y su mapeo a `egui::Visuals` estan en `src/palette.rs`, que es justo lo
-  que fastframe deja a cada app.
-- `fastframe-shell`: la ventana se puede cerrar sin matar el proceso, asi que
-  la cola sigue bajando desde el tray. `App` implementa `Resident`.
-- `fastframe-tray`: el item de bandeja con su menu.
-- `fastframe-icons`: los SVG incrustados, con el cargador que no olvida los
-  bytes cuando egui recorta texturas.
-- `fastframe-update`: autoactualizacion desde releases de GitHub con checksums
-  firmados y rollback. En Arch, `installation()` se niega cuando la copia la
-  maneja pacman o el AUR, que es lo correcto: ahi solo avisa.
-- `fastframe-log`: log a stderr y a archivo para reportes de bugs, sin datos
-  privados y sin el payload de los panics.
-
-## Como se ve
-
-![Mockup de la interfaz](assets/mockup.png)
+| Que | Donde |
+|---|---|
+| Ajustes | `~/.config/reel/settings.json` |
+| Temas propios | `~/.config/reel/themes/` |
+| Estado de la ventana | `~/.local/share/reel/app.ron` |
+| Log y pánicos | `~/.local/state/reel/` |
+| Lo bajado | `~/Videos` y `~/Music`, o lo que elijas |
 
 ## Construir
 
@@ -161,6 +166,10 @@ fastframe no esta en crates.io: las dependencias apuntan al tag `v0.2.2` del
 repo de GitHub. El tag se mueve a mano y a proposito, porque las notas de cada
 release dicen que hay que cambiar para subir.
 
+`eframe` trae winit por dentro, asi que la ventana se maneja con su API y winit
+no se declara como dependencia propia. Se le pide la feature `persistence` para
+que recuerde el estado.
+
 Para apuntar a otro binario de yt-dlp:
 
 ```sh
@@ -172,6 +181,32 @@ Y para abrir la app con el panel de ajustes ya puesto:
 ```sh
 cargo run -- --settings
 ```
+
+## Como se prueba
+
+Antes de un commit, `make verify` corre el formato, clippy con los warnings como
+errores y todas las pruebas:
+
+```sh
+make verify
+```
+
+Las pruebas de la cola corren **sin red y sin bajar nada**, con un yt-dlp de
+mentira, detras de la feature `selfcheck`:
+
+```sh
+make selfcheck
+```
+
+Miden que dos trabajos se solapen, que el estado de la fila no mienta, que el
+tope se respete, que cancelar mate al hijo, que un trabajo fallado se pueda
+reintentar y que nadie pase de "cancelado" a "listo".
+
+`make selfcheck-net` es la unica que sale a internet. Usa el yt-dlp de verdad
+para comprobar el contrato que las demas no pueden, porque el de mentira acepta
+cualquier flag: lee los metadatos de un video libre, le pasa los mismos
+argumentos que armaria la app y confirma que el progreso y los avisos de
+postprocesado llegan con la forma que la cola sabe leer.
 
 ## Estructura
 
@@ -187,15 +222,15 @@ src/
 ├── updates.rs         cuando revisar y como contarlo
 ├── backend/
 │   ├── mod.rs         la cola, los formatos, los eventos
-│   └── ytdlp.rs       el hilo que habla con yt-dlp
+│   └── ytdlp.rs       los hilos que hablan con yt-dlp
 └── ui/
     ├── top_bar.rs     nombre, version, ajustes
-    ├── url_bar.rs     enlace, pegar, yoink
+    ├── url_bar.rs     enlace, pegar, buscar
     ├── media_card.rs  lo detectado y sus formatos
     ├── queue.rs       la cola, que es la pantalla principal
     ├── settings.rs    el panel de ajustes y el selector de tema
-    ├── status_bar.rs  carpeta, tema seguido, actualizacion
-    └── widgets.rs     chips, barra de progreso, tarjetas
+    ├── status_bar.rs  carpeta, yt-dlp, tema y actualizacion
+    └── widgets.rs     chips, barra de progreso
 tests/
 └── cola.rs            la cola a procesos reales, con un yt-dlp falso
 ```
@@ -203,6 +238,29 @@ tests/
 `backend/ytdlp.rs` trae, detras de la feature `selfcheck`, un `yt-dlp` de
 mentira y las comprobaciones que corren en un proceso aparte. No va en el
 binario normal: `cargo build` sin la feature no lo incluye.
+
+## Que pone fastframe
+
+Casi todo lo que no es la interfaz. Esa es la idea de fastframe: se queda con lo
+que es igual en toda app de escritorio, y la app se queda con su interfaz.
+
+- `fastframe-fonts` y `fastframe-text`: Inter en cuatro pesos, fuentes instaladas
+  para los alfabetos que Inter no cubre, y el hinting y antialiasing que use el
+  escritorio. Esta en `src/fonts.rs`.
+- `fastframe-theme`: paletas JSON, las ocho paletas compartidas, y seguir el tema
+  de Omarchy en vivo con notificaciones del filesystem. La paleta de la app y su
+  mapeo a `egui::Visuals` estan en `src/palette.rs`, que es justo lo que
+  fastframe deja a cada app.
+- `fastframe-shell`: la ventana se puede cerrar sin matar el proceso, asi que la
+  cola sigue bajando desde el tray. `App` implementa `Resident`.
+- `fastframe-tray`: el item de bandeja con su menu.
+- `fastframe-icons`: los SVG incrustados, con el cargador que no olvida los bytes
+  cuando egui recorta texturas.
+- `fastframe-update`: autoactualizacion desde releases de GitHub con checksums
+  firmados y rollback. En Arch, `installation()` se niega cuando la copia la
+  maneja pacman o el AUR, que es lo correcto: ahi solo avisa.
+- `fastframe-log`: log a stderr y a archivo para reportes de bugs, sin datos
+  privados y sin el payload de los panics.
 
 ## Omarchy
 
@@ -212,6 +270,10 @@ cambio de tema. En el primer arranque se copia a
 `~/.config/omarchy/hooks/theme-set.d/`, sin pisar nada que ya exista. De ahi en
 adelante los colores cambian solos, con la revelacion desde el centro de la
 ventana que hace el propio escritorio.
+
+## Como se ve
+
+![Mockup de la interfaz](assets/mockup.png)
 
 ## Licencia
 
