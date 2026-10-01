@@ -88,6 +88,13 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
   que hace que yt-dlp **reanude** el `.part` en vez de empezar de cero. Esta en
   cada fila terminada y, cuando hay varios, como `reintentar todo` en la
   cabecera: es lo que uno quiere despues de que se caiga la red.
+
+  Un detalle que conviene saber: yt-dlp **no vuelve a bajar** un archivo que ya
+  esta en la carpeta de salida, ni siquiera al reintentar. Para el caso normal
+  esta bien, porque reintentar termina rapido y la fila queda en `listo`. Pero
+  si el archivo quedo truncado o corrupto —un postprocesado que fallo a
+  medias—, el reintento no lo arregla: hay que borrarlo a mano y volver a
+  pedirlo.
 - **Abrir carpeta** abre donde quedo el archivo.
 
 ### Cuantos a la vez
