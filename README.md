@@ -170,6 +170,7 @@ lo pone en una ventana donde la cola es la pantalla principal.
 | Temas propios | `~/.config/reel/themes/` |
 | Estado de la ventana | `~/.local/share/reel/app.ron` |
 | Log y pánicos | `~/.local/state/reel/` |
+| Socket de instancia | `~/.local/state/reel/reel.sock` |
 | Lo bajado | `~/Videos` y `~/Music`, o lo que elijas |
 
 ## Construir
@@ -209,6 +210,18 @@ cargo run -- --yoink "https://..."
 
 Es el mismo camino que `Pegar y descargar` del tray, asi que sirve para un
 atajo del escritorio o para llamarlo desde un script.
+
+**Solo hay una instancia.** Si la app ya esta abierta y la volves a lanzar, la
+nueva no abre una segunda ventana: le pasa su pedido a la que corre y se va.
+Con `--yoink` le manda el enlace, asi que esto funciona aunque la ventana este
+cerrada en el tray:
+
+```sh
+reel --yoink "https://..."   # se lo encola a la que ya corre
+```
+
+Sin esto, dos copias pelearian por el mismo icono de bandeja y escribirian el
+mismo archivo de estado.
 
 ## Como se prueba
 

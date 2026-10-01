@@ -41,6 +41,8 @@ pub enum UpdateMessage {
     State(UpdateState),
     /// Lo que contesto `yt-dlp --version`.
     Ytdlp(Result<String, String>),
+    /// Lo que pidio otra instancia de la app.
+    Aviso(crate::instancia::Aviso),
 }
 
 pub struct App {
@@ -371,10 +373,22 @@ impl App {
         self.avisar_si_termino();
         self.pump_paste();
 
-        for message in self.update_rx.try_iter() {
+        // Se juntan primero y se aplican despues: `try_iter` presta `self`
+        // mientras dura el bucle, y encolar un enlace lo pide prestado mutable.
+        let mensajes: Vec<UpdateMessage> = self.update_rx.try_iter().collect();
+        for message in mensajes {
             match message {
                 UpdateMessage::State(state) => self.update = state,
                 UpdateMessage::Ytdlp(resultado) => self.ytdlp = Some(resultado),
+                UpdateMessage::Aviso(aviso) => match aviso {
+                    // Otra copia de la app le paso el enlace a esta: se encola
+                    // aca, y la otra se cierra sin abrir ventana.
+                    crate::instancia::Aviso::Yoink(url) => self.yoink(url),
+                    crate::instancia::Aviso::Mostrar => {
+                        self.wants_show = true;
+                        self.hide_intent = false;
+                    }
+                },
             }
         }
 
@@ -732,6 +746,12 @@ impl App {
 
     pub fn check_updates(&self) {
         crate::updates::check(self.update_tx.clone());
+    }
+
+    /// El canal por el que el hilo del socket le cuenta a la app lo que le
+    /// mandan otras instancias. Se lo pasa `main` al empezar a escuchar.
+    pub fn aviso_sender(&self) -> Sender<UpdateMessage> {
+        self.update_tx.clone()
     }
 
     /// Pregunta por yt-dlp en un hilo: arrancar la ventana no puede depender de

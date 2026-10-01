@@ -10,6 +10,7 @@ mod backend;
 mod dirs;
 mod fonts;
 mod icon;
+mod instancia;
 mod palette;
 mod settings;
 mod ui;
@@ -58,6 +59,25 @@ fn main() -> anyhow::Result<()> {
     // un atajo del escritorio o para mandarle algo desde un script.
     let yoink = take_flag_value(&mut arguments, "--yoink");
 
+    // Si ya hay una instancia corriendo, se le pasa lo que se pidio y esta
+    // copia se va sin abrir nada: dos ventanas pelearian por el mismo icono de
+    // bandeja y por el mismo archivo de estado.
+    let escucha = match instancia::tomar() {
+        Some(listener) => Some(listener),
+        None => {
+            let aviso = match &yoink {
+                Some(url) => instancia::Aviso::Yoink(url.clone()),
+                None => instancia::Aviso::Mostrar,
+            };
+            if instancia::avisar(&aviso) {
+                println!("reel ya estaba abierto: le pase el pedido y me voy");
+                return Ok(());
+            }
+            // El socket estaba pero nadie contesta: se sigue como si nada.
+            None
+        }
+    };
+
     // Primero el ayudante de actualizacion, que puede quedarse con los
     // argumentos y terminar sin abrir ventana.
     let launch = fastframe_update::intercept(&updates::UPDATES);
@@ -89,6 +109,12 @@ fn main() -> anyhow::Result<()> {
     }
     if let Some(url) = yoink {
         app.yoink(url);
+    }
+    if let Some(listener) = escucha {
+        let avisos = app.aviso_sender();
+        instancia::escuchar(listener, move |aviso| {
+            let _ = avisos.send(app::UpdateMessage::Aviso(aviso));
+        });
     }
 
     if let Some(receipt) = launch.receipt {
