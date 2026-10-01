@@ -26,6 +26,14 @@ use super::{format_by_id, Command, Event, Kind, Media, Options, State};
 const PROGRESS_TEMPLATE: &str =
     "download:PROGRESS|%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s";
 
+/// Plantilla del postprocesado. yt-dlp la emite cuando empieza y termina cada
+/// paso, asi que el estado se sabe por lo que dice yt-dlp y no por adivinar
+/// con los textos que va imprimiendo. Antes esto era buscar "[Merger]" en la
+/// salida: si yt-dlp cambiaba el texto, la fila dejaba de avisar y nadie se
+/// enteraba.
+const POSTPROCESS_TEMPLATE: &str =
+    "postprocess:POSTPROCESS|%(progress.status)s|%(progress.postprocessor)s";
+
 /// yt-dlp del PATH. Si algun dia se quiere el binario propio (como yoinks, que
 /// lo baja a ~/.yoinks/bin), este es el unico lugar que cambia. `REEL_YTDLP`
 /// apunta a otro, que es como se prueban las carreras sin bajar nada.
@@ -54,6 +62,28 @@ fn default_dir(kind: Kind) -> PathBuf {
 /// espera. El `Mutex` se suelta antes de esperar, asi que nadie se queda
 /// bloqueado detras de una descarga larga.
 type Running = Arc<Mutex<HashMap<u64, Child>>>;
+
+/// Cuantas lineas de stderr se guardan para poder contar por que fallo una
+/// descarga. Acotado a proposito: con `--progress` son miles, y quedarse con
+/// todas seria guardar el log entero en memoria por cada trabajo.
+const LINEAS_DE_ERROR: usize = 40;
+
+/// Las ultimas lineas de la salida de yt-dlp.
+#[derive(Default)]
+struct VecDeLineas(Vec<String>);
+
+impl VecDeLineas {
+    fn guardar(&mut self, line: String) {
+        self.0.push(line);
+        if self.0.len() > LINEAS_DE_ERROR {
+            self.0.remove(0);
+        }
+    }
+
+    fn texto(&self) -> String {
+        self.0.join("\n")
+    }
+}
 
 /// Cuantos trabajos pueden bajar a la vez. Sin tope, encolar treinta enlaces
 /// lanzaria treinta yt-dlp y treinta ffmpeg: la maquina deja de responder y las
@@ -173,7 +203,7 @@ where
                                 &running,
                                 &cancelled,
                                 &events_job,
-                                &*wake_job,
+                                &wake_job,
                                 &alive,
                             ) {
                                 log::error!("no pude atender el trabajo {id}: {error}");
@@ -248,7 +278,7 @@ fn cancel<W>(
 
 /// Un candado envenenado no invalida el dato: los eventos son independientes
 /// entre si, asi que se sigue con lo que haya.
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -302,6 +332,8 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         "--no-warnings".into(),
         "--progress-template".into(),
         PROGRESS_TEMPLATE.into(),
+        "--progress-template".into(),
+        POSTPROCESS_TEMPLATE.into(),
         "--no-playlist".into(),
         "-P".into(),
         dir.display().to_string(),
@@ -345,11 +377,11 @@ fn run_job<W>(
     running: &Running,
     cancelled: &Mutex<HashSet<u64>>,
     events: &Sender<Event>,
-    wake: &W,
+    wake: &Arc<W>,
     alive: &AtomicBool,
 ) -> std::io::Result<()>
 where
-    W: Fn(),
+    W: Fn() + Send + Sync + 'static,
 {
     let (args, dir) = download_args(url, options);
 
@@ -369,48 +401,63 @@ where
     });
     wake();
 
-    // Lo que yt-dlp escriba en stderr se junta en su propio hilo. Si nadie lo
-    // leyera, el buffer de la tuberia se llena y yt-dlp se queda esperando:
-    // las dos partes trabadas.
-    let collected = Arc::new(Mutex::new(String::new()));
-    let reader = {
-        let collected = Arc::clone(&collected);
-        stderr.map(|mut stderr| {
-            std::thread::spawn(move || {
-                let mut text = String::new();
-                let _ = stderr.read_to_string(&mut text);
-                *lock(&collected) = text;
-            })
-        })
-    };
+    // Las dos tuberias se leen en su propio hilo, y las dos pasan por el mismo
+    // clasificador. yt-dlp manda el progreso Y los avisos de postprocesado por
+    // stderr, no por stdout: leer solo stdout era leer media conversacion.
+    //
+    // Ademas, si nadie leyera una tuberia, su buffer se llena y yt-dlp se queda
+    // esperando: las dos partes trabadas.
+    //
+    // Lo de stderr tambien se guarda, acotado, para poder contar por que fallo.
+    let collected = Arc::new(Mutex::new(VecDeLineas::default()));
+    let final_path: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
-    let mut final_path: Option<String> = None;
-    if let Some(stdout) = stdout {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(rest) = line.strip_prefix("PROGRESS|") {
-                if let Some(event) = parse_progress(id, rest) {
-                    let _ = events.send(event);
-                    wake();
+    let mut readers: Vec<JoinHandle<()>> = Vec::new();
+    let tuberias: [(Option<Box<dyn Read + Send>>, bool); 2] = [
+        (stdout.map(|s| Box::new(s) as Box<dyn Read + Send>), false),
+        (stderr.map(|s| Box::new(s) as Box<dyn Read + Send>), true),
+    ];
+    for (stream, guardar) in tuberias {
+        let Some(stream) = stream else { continue };
+        let events = events.clone();
+        let final_path = Arc::clone(&final_path);
+        let collected = Arc::clone(&collected);
+        let wake = Arc::clone(wake);
+        readers.push(std::thread::spawn(move || {
+            for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                match leer_linea(id, &line) {
+                    Salida::Progreso(event) => {
+                        let _ = events.send(event);
+                        wake();
+                    }
+                    Salida::Postprocesado(postprocessor) => {
+                        let _ = events.send(Event::StateChanged {
+                            id,
+                            state: State::Postprocessing { postprocessor },
+                        });
+                        wake();
+                    }
+                    Salida::Terminado(path) => {
+                        *lock(&final_path) = Some(path);
+                    }
+                    Salida::Nada => {}
                 }
-            } else if let Some(path) = line.strip_prefix("DONE|") {
-                final_path = Some(path.trim().to_string());
-            } else if line.contains("[Merger]") || line.contains("[ExtractAudio]") {
-                let _ = events.send(Event::StateChanged {
-                    id,
-                    state: State::Postprocessing,
-                });
-                wake();
+                if guardar {
+                    lock(&collected).guardar(line);
+                }
             }
-        }
+        }));
     }
 
     // El candado se suelta antes de esperar: si esperara con el puesto, una
     // cancelacion no podria ni entrar a matar el hijo.
     let child = lock(running).remove(&id);
     let status = child.map(|mut child| child.wait());
-    if let Some(reader) = reader {
+    // Se espera a los lectores antes de mirar lo que juntaron.
+    for reader in readers {
         let _ = reader.join();
     }
+    let final_path = lock(&final_path).clone();
 
     // La marca de cancelado es la fuente de verdad, y `cancel` la pone antes de
     // matar el hijo. Asi, cuando este hilo mira, ya esta: nunca reporta un
@@ -425,7 +472,7 @@ where
             path: final_path.unwrap_or_else(|| dir.display().to_string()),
         },
         Some(Ok(_)) => State::Failed {
-            reason: first_useful_line(&lock(&collected)),
+            reason: first_useful_line(&lock(&collected).texto()),
         },
         Some(Err(error)) => State::Failed {
             reason: format!("no pude esperar a yt-dlp: {error}"),
@@ -440,6 +487,58 @@ where
     let _ = events.send(Event::StateChanged { id, state });
     wake();
     Ok(())
+}
+
+/// Que hacer con una linea de la salida de yt-dlp. Separado del bucle para
+/// poder probarlo: es donde vive el contrato con yt-dlp, y antes se equivocaba
+/// en silencio.
+#[derive(Debug)]
+pub(crate) enum Salida {
+    /// Una actualizacion de progreso.
+    Progreso(Event),
+    /// El aviso de que arranco un paso de postprocesado.
+    Postprocesado(String),
+    /// La ruta final, cuando yt-dlp ya movio el archivo.
+    Terminado(String),
+    /// Lo que no nos dice nada.
+    Nada,
+}
+
+pub(crate) fn leer_linea(id: u64, line: &str) -> Salida {
+    if let Some(rest) = line.strip_prefix("PROGRESS|") {
+        return match parse_progress(id, rest) {
+            Some(event) => Salida::Progreso(event),
+            None => Salida::Nada,
+        };
+    }
+    if let Some(path) = line.strip_prefix("DONE|") {
+        return Salida::Terminado(path.trim().to_string());
+    }
+    if let Some(rest) = line.strip_prefix("POSTPROCESS|") {
+        return match parse_postprocess(rest) {
+            Some(postprocessor) => Salida::Postprocesado(postprocessor),
+            None => Salida::Nada,
+        };
+    }
+    Salida::Nada
+}
+
+/// De que paso del postprocesado avisa yt-dlp. `None` cuando no hay que contarlo.
+///
+/// Solo los pasos que tardan de verdad: unir pistas, extraer el audio y poner
+/// la caratula. Los demas —los metadatos, mover el archivo— pasan en un
+/// parpadeo, y avisarlos solo haria saltar la fila sin que nadie alcance a
+/// leerla. Se averiguo mirando lo que emite yt-dlp de verdad, no a ojo.
+fn parse_postprocess(rest: &str) -> Option<String> {
+    let mut parts = rest.split('|');
+    let status = parts.next()?.trim();
+    let postprocessor = parts.next()?.trim();
+
+    if status != "started" || postprocessor.is_empty() {
+        return None;
+    }
+    matches!(postprocessor, "Merger" | "ExtractAudio" | "EmbedThumbnail")
+        .then(|| postprocessor.to_string())
 }
 
 pub(crate) fn parse_progress(id: u64, rest: &str) -> Option<Event> {
@@ -593,6 +692,98 @@ mod tests {
         assert!(cupos.tomar(Duration::from_millis(50)).is_none());
         drop(_guardado);
         assert!(cupos.tomar(Duration::from_millis(50)).is_some());
+    }
+
+    /// El postprocesado se detecta por el aviso estructurado de yt-dlp.
+    #[test]
+    fn lee_el_aviso_de_postprocesado() {
+        assert_eq!(
+            parse_postprocess("started|Merger"),
+            Some("Merger".to_string())
+        );
+        assert_eq!(
+            parse_postprocess("started|ExtractAudio"),
+            Some("ExtractAudio".to_string())
+        );
+    }
+
+    /// La caratula tambien tarda y tambien se cuenta: es lo que hace una
+    /// descarga de audio con `--embed-thumbnail`.
+    #[test]
+    fn cuenta_la_caratula() {
+        assert_eq!(
+            parse_postprocess("started|EmbedThumbnail"),
+            Some("EmbedThumbnail".to_string())
+        );
+    }
+
+    /// Lo que no hay que contar: el final de un paso, los pasos que pasan en
+    /// un parpadeo, y un aviso sin nombre. `Metadata` y `MoveFiles` salen en
+    /// cualquier descarga con metadatos: no son trabajo que valga anunciar.
+    #[test]
+    fn ignora_lo_que_no_es_un_paso_que_contar() {
+        assert_eq!(parse_postprocess("finished|Merger"), None);
+        assert_eq!(parse_postprocess("started|MoveFiles"), None);
+        assert_eq!(parse_postprocess("started|Metadata"), None);
+        assert_eq!(parse_postprocess("started|"), None);
+        assert_eq!(parse_postprocess(""), None);
+        assert_eq!(parse_postprocess("started"), None);
+    }
+
+    /// Esta es la razon de todo el cambio: el texto suelto que antes movia el
+    /// estado ya no lo mueve, porque ahora se mira el aviso de yt-dlp y no lo
+    /// que se le ocurra imprimir. Si yt-dlp cambia ese texto, la fila sigue
+    /// avisando.
+    #[test]
+    fn el_texto_suelto_ya_no_mueve_el_estado() {
+        let lineas = [
+            "[Merger] Merging formats into \"salida.mp4\"",
+            "[ExtractAudio] Destination: salida.mp3",
+            "Merging formats into salida.mp4",
+        ];
+        for line in lineas {
+            assert!(
+                matches!(leer_linea(1, line), Salida::Nada),
+                "{line:?} no deberia mover el estado"
+            );
+        }
+    }
+
+    /// Cada linea de yt-dlp cae donde tiene que caer.
+    #[test]
+    fn reparte_las_lineas_de_ytdlp() {
+        assert!(matches!(
+            leer_linea(3, "PROGRESS| 50%|1024.0|10"),
+            Salida::Progreso(Event::Progress { id: 3, .. })
+        ));
+        assert!(matches!(
+            leer_linea(3, "POSTPROCESS|started|Merger"),
+            Salida::Postprocesado(paso) if paso == "Merger"
+        ));
+        assert!(matches!(
+            leer_linea(3, "DONE|/tmp/video.mp4"),
+            Salida::Terminado(ruta) if ruta == "/tmp/video.mp4"
+        ));
+        assert!(matches!(leer_linea(3, "cualquier cosa"), Salida::Nada));
+        // Un progreso que no se puede leer tampoco inventa nada.
+        assert!(matches!(leer_linea(3, "PROGRESS|NA|NA|NA"), Salida::Nada));
+    }
+
+    /// La descarga pide las dos plantillas: la del progreso y la del
+    /// postprocesado. Sin la segunda, la fila nunca diria que esta esperando
+    /// ffmpeg.
+    #[test]
+    fn la_descarga_pide_las_dos_plantillas() {
+        let options = Options::default();
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        let plantillas = args
+            .iter()
+            .enumerate()
+            .filter(|(_, arg)| arg.as_str() == "--progress-template")
+            .count();
+        assert_eq!(plantillas, 2, "faltan plantillas en {args:?}");
+        assert!(args.iter().any(|arg| arg == POSTPROCESS_TEMPLATE));
+        assert!(args.iter().any(|arg| arg == PROGRESS_TEMPLATE));
     }
 
     /// El formato de audio ya trae sus propios `--embed-*`, asi que la casilla

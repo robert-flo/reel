@@ -38,6 +38,12 @@ con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
 pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
 `abrir carpeta`.
 
+El paso de postprocesado lo cuenta yt-dlp con su `postprocess:`
+`--progress-template`, no adivinando sus mensajes: unir pistas, extraer el
+audio y poner la caratula salen de ahi. Antes se buscaba `[Merger]` en el
+texto, lo que tenia dos problemas: si yt-dlp cambiaba el mensaje la fila dejaba
+de avisar en silencio, y ademas esos mensajes van por stderr, que no se leia.
+
 Corren como mucho `MAX_CONCURRENTES` (tres) a la vez. Lo que sobre espera su
 lugar en vez de lanzar treinta yt-dlp y treinta ffmpeg contra la maquina.
 Cancelar mata el proceso de verdad y deja el trabajo en `cancelado`, no en

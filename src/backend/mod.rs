@@ -141,8 +141,11 @@ pub enum State {
     Queued,
     Downloading,
     /// yt-dlp esta uniendo pistas o extrayendo audio: hay trabajo, pero no hay
-    /// bytes nuevos. yoinks lo muestra como una pausa sin explicacion.
-    Postprocessing,
+    /// bytes nuevos. yoinks lo muestra como una pausa sin explicacion. El paso
+    /// viene del `postprocess:` de yt-dlp, no de adivinar sus textos.
+    Postprocessing {
+        postprocessor: String,
+    },
     Done {
         path: String,
     },
@@ -164,13 +167,16 @@ pub struct Job {
     /// Bytes por segundo, tal como los reporta yt-dlp.
     pub speed: Option<f64>,
     pub eta_secs: Option<u64>,
+    /// El paso de postprocesado en curso, si hay uno. Se recuerda aparte del
+    /// estado para poder contarlo en la fila y no perderlo al cambiar.
+    pub postprocessor: Option<String>,
 }
 
 impl Job {
     pub fn is_active(&self) -> bool {
         matches!(
             self.state,
-            State::Probing | State::Queued | State::Downloading | State::Postprocessing
+            State::Probing | State::Queued | State::Downloading | State::Postprocessing { .. }
         )
     }
 }
@@ -224,10 +230,12 @@ pub enum Event {
 /// tocar `REEL_YTDLP` sin pisarle el entorno a nadie.
 #[cfg(feature = "selfcheck")]
 pub mod selfcheck {
-    use super::ytdlp::{download_args, parse_progress, probe, ytdlp_binary, MAX_CONCURRENTES};
+    use super::ytdlp::{
+        download_args, leer_linea, lock, probe, ytdlp_binary, Salida, MAX_CONCURRENTES,
+    };
     use super::*;
     use std::collections::{HashMap, HashSet};
-    use std::io::{BufRead, BufReader};
+    use std::io::{BufRead, BufReader, Read};
     use std::path::{Path, PathBuf};
     use std::process::{Command as Proc, Stdio};
     use std::time::{Duration, Instant};
@@ -245,9 +253,9 @@ pub mod selfcheck {
         cuando: f64,
     }
 
-    /// Un `yt-dlp` de mentira. Escribe las lineas que la app sabe leer y deja
-    /// su hora de arranque en un archivo, que es lo unico que permite ver si
-    /// dos trabajos se solaparon.
+    /// Un `yt-dlp` de mentira. Escribe las lineas que la app sabe leer (el
+    /// progreso y los avisos de postprocesado) y deja su hora de arranque en un
+    /// archivo, que es lo unico que permite ver si dos trabajos se solaparon.
     ///
     /// La duracion la saca de la propia url (`.../v1`, `.../v2`). Es a
     /// proposito: si cada trabajo necesitara su propio binario, habria que
@@ -284,10 +292,13 @@ while [ "$i" -le 4 ]; do
   echo "PROGRESS| $((i * 25))%|1048576.0|$((4 - i))"
   i=$((i + 1))
 done
-# El postprocesado se anuncia y se deja un respiro: en la vida real ffmpeg
-# tarda, y asi el sondeo alcanza a verlo.
-echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4"
+# El postprocesado se anuncia como lo hace yt-dlp de verdad: con su
+# progress-template, y por stderr, que es por donde yt-dlp manda el progreso.
+# Darle un respiro deja que el sondeo lo alcance a ver, como con ffmpeg.
+echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4" >&2
+echo "POSTPROCESS|started|Merger" >&2
 sleep 0.5
+echo "POSTPROCESS|finished|Merger" >&2
 touch "$carpeta/reel-prueba-$segundos.mp4"
 echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
 "#;
@@ -468,7 +479,7 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
                     match &job.state {
                         State::Queued => vio_en_espera = true,
                         State::Downloading => vio_descarga = true,
-                        State::Postprocessing => vio_postproceso = true,
+                        State::Postprocessing { .. } => vio_postproceso = true,
                         State::Done { .. } | State::Failed { .. } | State::Cancelled => {
                             finales = Some(job.state.clone());
                         }
@@ -731,8 +742,11 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         println!("OK carrera");
     }
 
-    /// Un video libre, como los que la app va a bajar de verdad.
-    const VIDEO_DE_PRUEBA: &str = "https://archive.org/details/BigBuckBunny_124";
+    /// Un video libre y real, pero diminuto (menos de 2 KB): alcanza para
+    /// probar la invocacion completa sin bajar nada de peso. Los "mp4" de
+    /// pocos bytes que tambien hay en el sitio no sirven: ffmpeg los rechaza al
+    /// incrustar la caratula, y esa falla es del archivo, no de la app.
+    const VIDEO_DE_PRUEBA: &str = "https://archive.org/details/stufffffff";
 
     /// La unica prueba que sale a la red, y por eso no corre con las demas.
     ///
@@ -752,11 +766,8 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         let media = match probe(VIDEO_DE_PRUEBA) {
             Ok(media) => {
                 println!(
-                    "probe OK: {:?} de {:?} ({}s) en {}",
-                    media.title,
-                    media.uploader,
-                    media.duration.unwrap_or(0.0),
-                    media.host
+                    "probe OK: {:?} de {:?} en {}",
+                    media.title, media.uploader, media.host
                 );
                 media
             }
@@ -769,18 +780,28 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         assert!(!media.title.is_empty(), "el probe no trajo titulo");
         assert!(!media.host.is_empty(), "el probe no trajo de donde viene");
 
+        // Cada fase en su carpeta: compartirla hacia que una descarga anterior
+        // dejara el archivo puesto y la siguiente se saltara el postprocesado,
+        // que es justo lo que hay que mirar.
+        let en_seco = salida.join("seco");
+        let de_progreso = salida.join("progreso");
+        let de_final = salida.join("final");
+        for dir in [&en_seco, &de_progreso, &de_final] {
+            std::fs::create_dir_all(dir).expect("deberia crear el directorio de la fase");
+        }
+
         // Los mismos argumentos que arma la app, en seco: si un flag no existe
         // o el selector de formato es invalido, yt-dlp lo dice aca.
-        let options = Options {
-            output_dir: Some(salida.to_path_buf()),
+        let options = |dir: &Path| Options {
+            output_dir: Some(dir.to_path_buf()),
             ..Options::default()
         };
-        let (args, _) = download_args(VIDEO_DE_PRUEBA, &options);
+        let (args, _) = download_args(VIDEO_DE_PRUEBA, &options(&en_seco));
 
-        let mut en_seco = args.clone();
-        en_seco.push("--skip-download".into());
+        let mut con_seco = args.clone();
+        con_seco.push("--skip-download".into());
         let seco = Proc::new(ytdlp_binary())
-            .args(&en_seco)
+            .args(&con_seco)
             .output()
             .expect("deberia lanzar yt-dlp");
         if !seco.status.success() {
@@ -793,13 +814,11 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         );
         println!("argumentos OK (con --skip-download)");
 
-        // Y ahora si, la tuberia de progreso: el archivo mas chico del sitio,
-        // que se corta apenas llegan lineas con la forma esperada.
-        let mut con_progreso = args.clone();
-        con_progreso.push("-f".into());
-        con_progreso.push("worst".into());
+        // La tuberia de progreso. Se corta apenas llegan lineas con la forma
+        // esperada: no hace falta bajar todo para saber que se leen.
+        let (args, _) = download_args(VIDEO_DE_PRUEBA, &options(&de_progreso));
         let mut hijo = Proc::new(ytdlp_binary())
-            .args(&con_progreso)
+            .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -808,28 +827,130 @@ echo "DONE|$carpeta/reel-prueba-$segundos.mp4"
         let mut progresos = 0;
         {
             let stdout = hijo.stdout.take().expect("deberia tener stdout");
-            let lector = BufReader::new(stdout);
-            for line in lector.lines().map_while(Result::ok) {
-                if let Some(rest) = line.strip_prefix("PROGRESS|") {
-                    if parse_progress(1, rest).is_some() {
-                        progresos += 1;
-                    }
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if matches!(leer_linea(1, &line), Salida::Progreso(_)) {
+                    progresos += 1;
                 }
-                // Con un par de lineas bien formadas ya se probo lo que hacia
-                // falta: no hay que esperar a que baje todo.
                 if progresos >= 2 {
                     let _ = hijo.kill();
                     break;
                 }
             }
         }
+        // Se espera al hijo matado: si sigue vivo, todavia escribe.
         let _ = hijo.wait();
-
         assert!(
             progresos > 0,
-            "yt-dlp no imprimio ninguna linea que supieramos leer: la plantilla no coincide"
+            "yt-dlp no imprimio ninguna linea de progreso que supieramos leer"
         );
-        println!("OK descarga-real ({progresos} lineas de progreso leidas)");
+
+        // Y el postprocesado, con la descarga entera. El archivo de prueba pesa
+        // menos de 2 KB, asi que esto no es trafico.
+        let (args, _) = download_args(VIDEO_DE_PRUEBA, &options(&de_final));
+        // Que la app de verdad este pidiendo las dos plantillas.
+        let plantillas: Vec<&String> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i > 0 && args[i - 1] == "--progress-template")
+            .map(|(_, arg)| arg)
+            .collect();
+        println!("plantillas pedidas: {plantillas:?}");
+        assert_eq!(plantillas.len(), 2, "la app no pide las dos plantillas");
+        let mut hijo = Proc::new(ytdlp_binary())
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("deberia lanzar yt-dlp");
+
+        let pasos: Vec<String> = Vec::new();
+        let finales: Option<String> = None;
+        let crudo: Vec<String> = Vec::new();
+        // Las dos tuberias, como las lee la app. El progreso y los avisos de
+        // postprocesado van por stderr: leer solo stdout era el bug.
+        let pasos = Arc::new(Mutex::new(pasos));
+        let finales = Arc::new(Mutex::new(finales));
+        let crudo = Arc::new(Mutex::new(crudo));
+        let mut lectores = Vec::new();
+        let tuberias: [(Option<Box<dyn Read + Send>>, bool); 2] = [
+            (
+                hijo.stdout
+                    .take()
+                    .map(|s| Box::new(s) as Box<dyn Read + Send>),
+                false,
+            ),
+            (
+                hijo.stderr
+                    .take()
+                    .map(|s| Box::new(s) as Box<dyn Read + Send>),
+                true,
+            ),
+        ];
+        for (stream, guardar) in tuberias {
+            let Some(stream) = stream else { continue };
+            let pasos = Arc::clone(&pasos);
+            let finales = Arc::clone(&finales);
+            let crudo = Arc::clone(&crudo);
+            lectores.push(std::thread::spawn(move || {
+                for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                    // Todo pasa por el mismo clasificador que usa la app: si algo
+                    // no se cuenta aca, es porque la app tampoco lo cuenta.
+                    match leer_linea(1, &line) {
+                        Salida::Postprocesado(paso) => lock(&pasos).push(paso),
+                        Salida::Terminado(path) => *lock(&finales) = Some(path),
+                        _ => {}
+                    }
+                    if guardar {
+                        let mut crudo = lock(&crudo);
+                        crudo.push(line);
+                        if crudo.len() > 30 {
+                            crudo.remove(0);
+                        }
+                    }
+                }
+            }));
+        }
+        let estado = hijo.wait().expect("deberia esperar a yt-dlp");
+        for lector in lectores {
+            let _ = lector.join();
+        }
+        let pasos = Arc::try_unwrap(pasos)
+            .map(|m| m.into_inner().unwrap_or_default())
+            .unwrap_or_default();
+        let finales = Arc::try_unwrap(finales)
+            .map(|m| m.into_inner().unwrap_or_default())
+            .unwrap_or_default();
+        let crudo = Arc::try_unwrap(crudo)
+            .map(|m| m.into_inner().unwrap_or_default())
+            .unwrap_or_default();
+
+        println!("pasos de postprocesado: {pasos:?}");
+        println!("archivo final: {finales:?}");
+        if !estado.success() {
+            eprintln!("--- ultimas lineas de yt-dlp (stderr) ---");
+            for line in &crudo {
+                eprintln!("{line}");
+            }
+        }
+        assert!(estado.success(), "yt-dlp termino en {estado:?}");
+        assert!(
+            finales.is_some(),
+            "nunca llego la linea DONE: el --print no funciona con yt-dlp real"
+        );
+        assert!(
+            finales
+                .as_deref()
+                .is_some_and(|path| Path::new(path).exists()),
+            "el archivo que dijo yt-dlp no existe: {finales:?}"
+        );
+        assert!(
+            pasos.iter().any(|paso| paso == "EmbedThumbnail"),
+            "yt-dlp no aviso que estaba poniendo la caratula: la plantilla del postprocess no funciona ({pasos:?})"
+        );
+        println!(
+            "OK descarga-real ({progresos} de progreso, {} de postprocesado)",
+            pasos.len()
+        );
     }
 
     /// Corre en un proceso propio: prepara un directorio, elige la prueba y
@@ -884,6 +1005,7 @@ impl Queue {
             progress: 0.0,
             speed: None,
             eta_secs: None,
+            postprocessor: None,
         });
         id
     }
@@ -940,6 +1062,11 @@ impl Queue {
                 if let Some(job) = self.get_mut(id) {
                     if matches!(state, State::Done { .. }) {
                         job.progress = 1.0;
+                    }
+                    // El paso en curso se guarda en el trabajo: la fila lo
+                    // cuenta y no se pierde si el estado cambia despues.
+                    if let State::Postprocessing { postprocessor } = &state {
+                        job.postprocessor = Some(postprocessor.clone());
                     }
                     job.state = state;
                 }

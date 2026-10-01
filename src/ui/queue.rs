@@ -102,10 +102,15 @@ fn row(
             }
             ("descargando".to_string(), palette.accent, parts.join(" · "))
         }
-        State::Postprocessing => (
+        State::Postprocessing { .. } => (
             "esperando ffmpeg".to_string(),
             palette.warning,
-            "fusionando pistas".to_string(),
+            // Lo que yt-dlp dijo que esta haciendo, si lo dijo.
+            job.postprocessor
+                .as_deref()
+                .map(postprocessor_label)
+                .unwrap_or("postprocesando")
+                .to_string(),
         ),
         State::Done { path } => ("listo".to_string(), palette.done, path.clone()),
         State::Failed { reason } => ("fallo".to_string(), palette.danger, reason.clone()),
@@ -113,7 +118,7 @@ fn row(
     };
 
     let bar_color = match &job.state {
-        State::Postprocessing => palette.warning,
+        State::Postprocessing { .. } => palette.warning,
         State::Done { .. } => palette.done,
         State::Failed { .. } => palette.danger,
         _ => palette.progress,
@@ -189,6 +194,16 @@ fn row(
             ui.add_space(10.0);
             progress_bar(ui, job.progress, bar_color, &palette);
         });
+}
+
+/// El nombre del paso de yt-dlp como lo diria una persona.
+fn postprocessor_label(postprocessor: &str) -> &'static str {
+    match postprocessor {
+        "Merger" => "fusionando pistas",
+        "ExtractAudio" => "extrayendo el audio",
+        "EmbedThumbnail" => "poniendo la caratula",
+        _ => "postprocesando",
+    }
 }
 
 /// "1080p · mp4" o "mp3 · 320k": la calidad y el contenedor que de verdad va a
