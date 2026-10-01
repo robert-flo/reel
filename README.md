@@ -139,10 +139,18 @@ Se abre centrada la primera vez, con el icono de la app (el mismo del tray) y
 1200x780. eframe guarda su estado en `~/.local/share/reel/app.ron`, asi que el
 tamano que dejo el usuario se repone en el arranque siguiente.
 
-Ojo con lo que eso significa en Wayland: **el compositor manda**. En Hyprland,
-que es de mosaico, la ventana ocupa lo que le toca y ni la posicion ni el tamano
-que guardemos se aplican; el estado sirve sobre todo para la memoria de egui. En
-X11 y en ventanas flotantes si se repone donde estaba.
+Ojo con lo que eso significa en Wayland: **el compositor manda**.
+
+- Con la ventana **en mosaico** —como la abre Hyprland por defecto— el tamano
+  lo decide el gestor: pedimos 1200x780 y la ventana ocupa lo que le toca.
+- Con la ventana **flotante**, en cambio, el tamano si se respeta y se repone.
+  Medido: se abrio en 1200x780, se redimensiono a 1400x900, y el arranque
+  siguiente abrio en 1400x900.
+- La **posicion** no se guarda en Wayland (`outer_position_pixels` queda vacio
+  porque el protocolo no la deja leer), asi que cada arranque la decide el
+  compositor. eframe hace lo correcto al no guardar algo que no puede reponer.
+
+En X11 se reponen las dos cosas.
 
 El aviso de "ventana fuera de pantalla" se comprueba en cada ventana y no una
 sola vez: fastframe-shell vuelve a crear la ventana cada vez que se muestra
