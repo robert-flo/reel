@@ -11,6 +11,81 @@ soporta 1800 y pico de sitios, asi que esto no es solo YouTube.
 > ajustes y la cola concurrente estan puestos y probados contra yt-dlp de
 > verdad. Todavia no hay releases.
 
+## Estado
+
+Que esta hecho, que falta, y que conviene saber antes de tocar. Pensado para
+quien siga con esto, sea una persona u otro agente.
+
+### Hecho y verificado
+
+Cada punto se comprobo de alguna forma concreta, no solo compilando.
+
+- **La cola baja hasta tres a la vez**, cada trabajo en su hilo, con tope
+  (`MAX_CONCURRENTES`). Verificado con el yt-dlp de mentira: tres trabajos
+  arrancan en el mismo milisegundo y el total es 2.9s contra 4.4s en serie.
+- **El estado de la fila no miente**: nace en `en espera` y pasa a
+  `descargando` recien cuando yt-dlp arranca. Antes se mandaba `descargando` al
+  encolar y la segunda fila mentia con 0%.
+- **Cancelar mata el proceso** y deja `cancelado`. Verificado: 25ms y el hijo
+  muerto.
+- **Reintentar reanuda** el `.part` en vez de empezar de cero. Medido contra
+  yt-dlp real: `[download] Resuming download at byte 14752392`.
+- **`volver a bajar`** arregla un archivo truncado, que `reintentar` no puede
+  porque yt-dlp saltea un archivo que existe. Medido: 16 -> 11233 bytes.
+- **El postprocesado se detecta por el aviso estructurado** de yt-dlp
+  (`postprocess:`), no adivinando sus textos. Ojo: **esos avisos van por
+  stderr**, y leer solo stdout fue un bug que dejo la deteccion sin funcionar.
+- **El panel de ajustes** guarda carpeta, formato, plantilla, cookies,
+  subtitulos y tema en `~/.config/reel/settings.json`, y el formato y el tema
+  se reponen al arrancar.
+- **Las listas se expanden a una fila por video**, con `--flat-playlist`.
+  Verificado con una lista real de 19 videos.
+- **Una sola instancia**: la segunda le pasa su pedido a la que corre. Sin esto
+  dos copias peleaban por el icono de bandeja y por `app.ron`.
+- **Avisa al terminar la cola** por `notify-send`, y avisa si falta `yt-dlp`
+  al arrancar.
+- **La persistencia del tamano de ventana** funciona: verificado en flotante,
+  1400x900 se repone. En mosaico no se nota porque manda el compositor.
+
+### Falta
+
+- **Nada de la interfaz se probo a mano.** Los botones (`reintentar`,
+  `volver a bajar`, `abrir carpeta`, el de dos toques de las listas) tienen test
+  de su logica, pero nadie los apreto: accionar la interfaz pediria un automata
+  de entrada (`ydotool` no esta instalado) y no se agrego una dependencia de
+  test solo para eso. **Es lo mas util que puede hacer quien siga.**
+- **`ffmpeg` no se valida al arrancar.** El postprocesado lo necesita y la app
+  solo le pregunta la version a `yt-dlp`. Sin `ffmpeg`, `Mejor`, `1080p` y `mp3`
+  fallan al final en vez de avisar al principio. `make doctor` si lo chequea.
+- **La actualizacion nunca se probo de verdad**, porque el repositorio no tiene
+  releases publicados. El 404 se trata como "todavia no hay versiones" y el pie
+  se calla, pero el camino de descargar e instalar una version nueva esta sin
+  ejercitar.
+- **El tray no se probo**: ni el icono, ni `Pegar y descargar`, ni que la cola
+  siga bajando con la ventana cerrada. El codigo esta y compila.
+- **Un archivo corrupto necesita `volver a bajar` a mano.** No hay deteccion
+  automatica: yt-dlp no dice si un archivo existente esta completo, y una
+  heuristica por tamano romperia el caso normal.
+- **Las listas no estiman el tamano.** Una lista de 19 videos de YouTube son
+  gigabytes; se pide confirmacion por cantidad (diez o mas), no por peso.
+- **Los subtitulos no se probaron** con yt-dlp real.
+
+### Trampas que ya nos costaron tiempo
+
+- **Los avisos de progreso y postprocesado de yt-dlp van por `stderr`**, no por
+  `stdout`. Hay que leer las dos tuberias o se pierde la mitad.
+- **Hay "videos" en archive.org de pocos cientos de bytes que son falsos.**
+  ffmpeg los rechaza al incrustar la caratula, con un error que parece de la
+  app. El fixture bueno es `0.03-orange` (16 KB, aguanta el postprocesado).
+- **El yt-dlp de mentira tiene que imitar los arroyos**, no solo el contenido.
+  Cuando escribia por stdout lo que el original escribe por stderr, las pruebas
+  confirmaban el error en vez de detectarlo.
+- **En bash, un `while` con `shift` consume `$*`.** Un `case " $* "` despues del
+  bucle no matchea nunca: hay que guardar la linea de comandos antes.
+- **`--no-overwrites` no hace falta**: yt-dlp ya saltea un archivo que existe.
+- **eframe trae winit por dentro.** No se declara como dependencia propia y no
+  se puede "integrar" a mano sin salir de eframe.
+
 ## Lo que hace
 
 - **La cola es la pantalla principal**, no un detalle. Hasta tres descargas a la
