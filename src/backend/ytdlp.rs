@@ -704,6 +704,33 @@ pub(crate) fn parse_progress(id: u64, rest: &str) -> Option<Event> {
     })
 }
 
+/// Que hacer con un error que se repite. Devuelve `None` cuando no hay nada
+/// util que agregar, y ahi se deja el mensaje de yt-dlp tal cual.
+///
+/// El 403 de YouTube, por ejemplo, no es culpa del usuario ni del archivo: es
+/// que el sitio frena los pedidos seguidos. Decir eso ahorra el rato de pensar
+/// que la app esta rota.
+pub(crate) fn consejo_para(error: &str) -> Option<&'static str> {
+    let texto = error.to_lowercase();
+
+    if texto.contains("403") || texto.contains("forbidden") {
+        return Some("el sitio rechazo el pedido; suele pasar si se pide muchas veces seguidas, proba de nuevo en un rato");
+    }
+    if texto.contains("private video") || texto.contains("login") || texto.contains("sign in") {
+        return Some("parece que hace falta iniciar sesion: proba con las cookies del navegador");
+    }
+    if texto.contains("video unavailable") || texto.contains("removed") {
+        return Some("el video ya no esta disponible en el sitio");
+    }
+    if texto.contains("requested format is not available") {
+        return Some("ese formato no existe para este video: elegi otro");
+    }
+    if texto.contains("timed out") || texto.contains("timeout") {
+        return Some("se corto la conexion: reintentar suele alcanzar");
+    }
+    None
+}
+
 /// yt-dlp escupe varias lineas; la primera que empieza con ERROR es la util.
 fn first_useful_line(stderr: &str) -> String {
     stderr
@@ -1002,6 +1029,28 @@ mod tests {
 
         let vacia = serde_json::json!({ "title": "url vacia", "url": "" });
         assert!(entrada_de_lista(&vacia).is_none());
+    }
+
+    /// Los errores que se repiten tienen que decir que hacer, no solo que
+    /// fallaron. El 403 de YouTube salio en una prueba de verdad.
+    #[test]
+    fn los_errores_conocidos_traen_consejo() {
+        let real = "unable to download video data: HTTP Error 403: Forbidden";
+        let consejo = consejo_para(real).expect("el 403 deberia traer consejo");
+        assert!(consejo.contains("de nuevo"), "consejo poco util: {consejo}");
+
+        assert!(consejo_para("ERROR: Private video").is_some());
+        assert!(consejo_para("Video unavailable").is_some());
+        assert!(consejo_para("Requested format is not available").is_some());
+        assert!(consejo_para("connection timed out").is_some());
+    }
+
+    /// Un error que no conocemos se deja como vino: inventar un consejo seria
+    /// peor que no dar ninguno.
+    #[test]
+    fn un_error_desconocido_no_inventa_consejo() {
+        assert_eq!(consejo_para("algo raro paso"), None);
+        assert_eq!(consejo_para(""), None);
     }
 
     /// Cancelar deja el `.part` en la carpeta y el reintento vuelve a pedir la

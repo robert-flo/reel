@@ -143,7 +143,16 @@ fn row(
                 .to_string(),
         ),
         State::Done { path } => ("listo".to_string(), palette.done, path.clone()),
-        State::Failed { reason } => ("fallo".to_string(), palette.danger, reason.clone()),
+        State::Failed { reason } => (
+            "fallo".to_string(),
+            palette.danger,
+            // El error de yt-dlp tal cual, y si lo reconocemos, que hacer.
+            // El mensaje crudo no se esconde: es la unica forma de reportarlo.
+            match crate::backend::ytdlp::consejo_para(reason) {
+                Some(consejo) => format!("{reason}\n{consejo}"),
+                None => reason.clone(),
+            },
+        ),
         State::Cancelled => ("cancelado".to_string(), palette.dim, String::new()),
     };
 

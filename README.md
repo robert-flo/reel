@@ -68,7 +68,13 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 | `opus` | solo audio, en opus |
 
 `metadatos + caratula` agrega los datos del video y la miniatura al archivo.
-`capitulos` los incrusta (solo video). Los subtitulos se bajan y se incrustan en
+`capitulos` los incrusta (solo video).
+
+`Mejor` y las calidades de video piden el mejor par de pistas que ofrezca el
+sitio y las unen en mp4. Con YouTube eso suele dar **av1 de video y opus de
+audio**, que es lo mejor que hay pero no lo abre cualquier reproductor viejo.
+Si el archivo va a un televisor o a un telefono que no los soporte, elegi una
+altura concreta (`720p`) o bajalo en `mp3`. Los subtitulos se bajan y se incrustan en
 los idiomas que elijas en los ajustes.
 
 ## La cola
@@ -137,6 +143,12 @@ Al arrancar, la app le pregunta la version a `yt-dlp` en un hilo. Si anda, el
 pie lo dice (`yt-dlp 2026.08.19`); si falta o el binario del PATH no es yt-dlp,
 avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que lo
 descubras cuando ya apretaste `descargar`.
+
+Cuando una descarga falla, la fila muestra el error de yt-dlp tal cual —es la
+unica forma de reportarlo— y, si es uno de los que se repiten, tambien que
+hacer: el `403` de YouTube avisa que suele ser por pedir muchas veces seguidas
+y sugiere reintentar en un rato; un video privado sugiere las cookies del
+navegador; un formato que no existe sugiere elegir otro.
 
 `make doctor` dice que falta en el sistema para que la app funcione.
 
