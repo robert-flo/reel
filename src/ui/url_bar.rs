@@ -42,11 +42,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         }
 
         ui.add_space(Metrics::GAP);
-        let enabled = !app.url.trim().is_empty();
+        let enabled = !app.url.trim().is_empty() && !app.probing;
+        let label = if app.probing { "leyendo" } else { "buscar" };
         let go = ui.add_enabled(
             enabled,
             egui::Button::new(text(
-                "descargar",
+                label,
                 14.0,
                 Weight::SemiBold,
                 if enabled {
@@ -65,7 +66,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         );
 
         if go.clicked() || (submitted && enabled) {
-            app.enqueue_current_url();
+            app.preview_current_url();
         }
     });
 }

@@ -181,6 +181,11 @@ impl Job {
 /// Lo que la interfaz le pide al worker.
 #[derive(Debug)]
 pub enum Command {
+    /// Solo leer el enlace para pintar la ficha. No crea trabajo ni descarga
+    /// nada: el usuario todavia tiene que elegir formato.
+    Preview {
+        url: String,
+    },
     Probe {
         id: u64,
         url: String,
@@ -199,6 +204,13 @@ pub enum Command {
 /// Lo que el worker le cuenta a la interfaz.
 #[derive(Debug)]
 pub enum Event {
+    Previewed {
+        url: String,
+        media: Media,
+    },
+    PreviewFailed {
+        reason: String,
+    },
     Probed {
         id: u64,
         media: Media,
@@ -219,6 +231,9 @@ pub enum Event {
 #[derive(Default)]
 pub struct Queue {
     pub jobs: Vec<Job>,
+    /// Lo ultimo que se leyo de un enlace, para la ficha de arriba.
+    pub preview: Option<(String, Media)>,
+    pub preview_error: Option<String>,
     next_id: u64,
 }
 
@@ -254,8 +269,27 @@ impl Queue {
             .count()
     }
 
+    /// Encola un trabajo que ya tiene sus metadatos leidos: la ficha ya los
+    /// trajo, asi que la fila nace con titulo y en espera de arrancar.
+    pub fn push_ready(&mut self, url: String, options: Options, media: Media) -> u64 {
+        let id = self.push(url, options);
+        if let Some(job) = self.get_mut(id) {
+            job.media = media;
+            job.state = State::Queued;
+        }
+        id
+    }
+
     pub fn apply(&mut self, event: Event) {
         match event {
+            Event::Previewed { url, media } => {
+                self.preview_error = None;
+                self.preview = Some((url, media));
+            }
+            Event::PreviewFailed { reason } => {
+                self.preview = None;
+                self.preview_error = Some(reason);
+            }
             Event::Probed { id, media } => {
                 if let Some(job) = self.get_mut(id) {
                     job.media = media;

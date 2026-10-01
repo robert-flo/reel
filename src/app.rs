@@ -38,6 +38,9 @@ pub struct App {
     pub preview: Option<Media>,
     /// El enlace al que corresponde la ficha de arriba.
     pub preview_url: Option<String>,
+    pub preview_error: Option<String>,
+    /// Hay un vistazo en curso: el boton dice "leyendo".
+    pub probing: bool,
     pub backend: Backend,
 
     pub palette: Palette,
@@ -103,6 +106,8 @@ impl App {
             options: Options::default(),
             preview: None,
             preview_url: None,
+            preview_error: None,
+            probing: false,
             backend,
             palette,
             wanted_palette: palette,
@@ -292,19 +297,52 @@ impl App {
             .queue
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(job) = queue.jobs.last() {
-            if !job.media.title.is_empty() {
-                self.preview = Some(job.media.clone());
-                self.preview_url = Some(job.url.clone());
-            }
+
+        if let Some((url, media)) = &queue.preview {
+            self.preview = Some(media.clone());
+            self.preview_url = Some(url.clone());
+            self.preview_error = None;
+            self.probing = false;
+        }
+        if let Some(reason) = &queue.preview_error {
+            self.preview = None;
+            self.preview_url = None;
+            self.preview_error = Some(reason.clone());
+            self.probing = false;
         }
     }
 
-    pub fn enqueue_current_url(&mut self) {
+    /// Paso uno: leer el enlace y pintar la ficha. No descarga nada todavia,
+    /// que es justo el punto de tener formatos que elegir.
+    pub fn preview_current_url(&mut self) {
         let url = self.url.trim().to_string();
         if url.is_empty() {
             return;
         }
+
+        {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.preview = None;
+            queue.preview_error = None;
+        }
+
+        self.preview = None;
+        self.preview_url = None;
+        self.preview_error = None;
+        self.probing = true;
+        self.backend.send(Command::Preview { url });
+    }
+
+    /// Paso dos: con el formato ya elegido, a descargar. La ficha se queda
+    /// puesta para poder encolar otra calidad del mismo enlace.
+    pub fn enqueue_preview(&mut self) {
+        let (Some(url), Some(media)) = (self.preview_url.clone(), self.preview.clone()) else {
+            return;
+        };
 
         let id = {
             let mut queue = self
@@ -312,47 +350,15 @@ impl App {
                 .queue
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            queue.push(url.clone(), self.options.clone())
+            queue.push_ready(url.clone(), self.options.clone(), media)
         };
 
-        self.backend.send(Command::Probe {
-            id,
-            url: url.clone(),
-        });
         self.backend.send(Command::Start {
             id,
             url,
             options: self.options.clone(),
         });
         self.url.clear();
-    }
-
-    /// "a la cola" en la ficha: vuelve a encolar el enlace de la ficha con el
-    /// formato que este elegido ahora, sin depender del campo de texto, que
-    /// para entonces ya se vacio.
-    pub fn enqueue_preview(&mut self) {
-        let Some(url) = self.preview_url.clone() else {
-            return;
-        };
-
-        let id = {
-            let mut queue = self
-                .backend
-                .queue
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            queue.push(url.clone(), self.options.clone())
-        };
-
-        self.backend.send(Command::Probe {
-            id,
-            url: url.clone(),
-        });
-        self.backend.send(Command::Start {
-            id,
-            url,
-            options: self.options.clone(),
-        });
     }
 
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {

@@ -14,6 +14,27 @@ use super::{human_duration, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    if app.probing && app.preview.is_none() {
+        ui.label(caption("leyendo el enlace...", &palette));
+        ui.add_space(Metrics::GAP);
+        return;
+    }
+
+    if let Some(reason) = app.preview_error.clone() {
+        egui::Frame::new()
+            .fill(palette.panel)
+            .stroke(Stroke::new(1.0, palette.outline))
+            .corner_radius(CornerRadius::same(Metrics::RADIUS))
+            .inner_margin(egui::Margin::symmetric(18, 14))
+            .show(ui, |ui| {
+                ui.label(text("no pude leer ese enlace", 13.0, Weight::Medium, palette.danger));
+                ui.add_space(4.0);
+                ui.label(caption(reason, &palette));
+            });
+        ui.add_space(Metrics::GAP);
+        return;
+    }
+
     let Some(preview) = app.preview.clone() else {
         return;
     };
@@ -75,13 +96,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     let go = ui.add_sized(
                         Vec2::new(140.0, 38.0),
                         egui::Button::new(text(
-                            "a la cola",
+                            "descargar",
                             13.0,
-                            Weight::Medium,
-                            palette.text,
+                            Weight::SemiBold,
+                            palette.on_accent,
                         ))
-                        .fill(palette.surface)
-                        .stroke(Stroke::new(1.0, palette.outline))
+                        .fill(palette.accent)
+                        .stroke(Stroke::NONE)
                         .corner_radius(CornerRadius::same(8)),
                     );
                     if go

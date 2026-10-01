@@ -76,6 +76,17 @@ where
                 });
                 wake();
             }
+            Command::Preview { url } => {
+                match probe(&url) {
+                    Ok(media) => {
+                        let _ = events.send(Event::Previewed { url, media });
+                    }
+                    Err(reason) => {
+                        let _ = events.send(Event::PreviewFailed { reason });
+                    }
+                }
+                wake();
+            }
             Command::Probe { id, url } => {
                 match probe(&url) {
                     Ok(media) => {
