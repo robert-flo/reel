@@ -88,7 +88,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
-                        app.enqueue_current_url();
+                        app.enqueue_preview();
                     }
                 });
             });

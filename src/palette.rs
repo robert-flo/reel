@@ -179,8 +179,21 @@ impl fastframe_theme::Palette for Palette {
         if given.contains("accent") && !given.contains("progress") {
             self.progress = self.accent;
         }
-        if given.contains("accent") && !given.contains("done") {
-            self.done = self.accent;
+        if !given.contains("done") {
+            // Un verde de "listo" que siga al tema: el verde puro llevado
+            // hacia el texto del tema, para que no desentone en claro.
+            self.done = mix(Color32::from_rgb(0x5a, 0xc8, 0x6a), self.text, 0.25);
         }
     }
+}
+
+/// Un color a medio camino de otro, como mezcla Omarchy.
+fn mix(from: Color32, to: Color32, amount: f32) -> Color32 {
+    let amount = amount.clamp(0.0, 1.0);
+    let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * amount) as u8;
+    Color32::from_rgb(
+        channel(from.r(), to.r()),
+        channel(from.g(), to.g()),
+        channel(from.b(), to.b()),
+    )
 }

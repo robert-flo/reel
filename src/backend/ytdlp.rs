@@ -4,7 +4,7 @@
 //! duracion, y luego la descarga con `--newline --progress-template` para que
 //! el progreso llegue en lineas faciles de leer en vez del dibujo de barra.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command as Proc, Stdio};
@@ -45,8 +45,20 @@ where
     W: Fn() + Send + 'static,
 {
     let mut running: HashMap<u64, Child> = HashMap::new();
+    // Las ordenes que sacamos del canal mientras buscabamos cancelaciones y
+    // que todavia hay que atender. Sin esto, el Start que viaja detras de un
+    // Probe se perdia y el trabajo se quedaba en espera para siempre.
+    let mut pending: VecDeque<Command> = VecDeque::new();
 
-    while let Ok(command) = commands.recv() {
+    loop {
+        let command = match pending.pop_front() {
+            Some(command) => command,
+            None => match commands.recv() {
+                Ok(command) => command,
+                Err(_) => break,
+            },
+        };
+
         match command {
             Command::Shutdown => {
                 for (_, mut child) in running.drain() {
@@ -92,7 +104,8 @@ where
             }
         }
 
-        // Las ordenes de cancelar que llegaron mientras descargabamos.
+        // Las ordenes de cancelar que llegaron mientras descargabamos se
+        // atienden ya; el resto se guarda en la fila y se atiende enseguida.
         loop {
             match commands.try_recv() {
                 Ok(Command::Cancel { id }) => {
@@ -100,7 +113,8 @@ where
                         let _ = child.kill();
                     }
                 }
-                Ok(_) | Err(TryRecvError::Empty) => break,
+                Ok(other) => pending.push_back(other),
+                Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return,
             }
         }

@@ -36,6 +36,8 @@ pub struct App {
     pub url: String,
     pub options: Options,
     pub preview: Option<Media>,
+    /// El enlace al que corresponde la ficha de arriba.
+    pub preview_url: Option<String>,
     pub backend: Backend,
 
     pub palette: Palette,
@@ -100,6 +102,7 @@ impl App {
             url: String::new(),
             options: Options::default(),
             preview: None,
+            preview_url: None,
             backend,
             palette,
             wanted_palette: palette,
@@ -292,6 +295,7 @@ impl App {
         if let Some(job) = queue.jobs.last() {
             if !job.media.title.is_empty() {
                 self.preview = Some(job.media.clone());
+                self.preview_url = Some(job.url.clone());
             }
         }
     }
@@ -321,6 +325,34 @@ impl App {
             options: self.options.clone(),
         });
         self.url.clear();
+    }
+
+    /// "a la cola" en la ficha: vuelve a encolar el enlace de la ficha con el
+    /// formato que este elegido ahora, sin depender del campo de texto, que
+    /// para entonces ya se vacio.
+    pub fn enqueue_preview(&mut self) {
+        let Some(url) = self.preview_url.clone() else {
+            return;
+        };
+
+        let id = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.push(url.clone(), self.options.clone())
+        };
+
+        self.backend.send(Command::Probe {
+            id,
+            url: url.clone(),
+        });
+        self.backend.send(Command::Start {
+            id,
+            url,
+            options: self.options.clone(),
+        });
     }
 
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
