@@ -31,6 +31,8 @@ pub enum UpdateState {
 #[derive(Debug)]
 pub enum UpdateMessage {
     State(UpdateState),
+    /// Lo que contesto `yt-dlp --version`.
+    Ytdlp(Result<String, String>),
 }
 
 pub struct App {
@@ -57,6 +59,10 @@ pub struct App {
     /// Lo pidio "Pegar y descargar" del tray: cuando el vistazo llegue, el
     /// trabajo entra a la cola solo, sin pasar por el boton.
     enqueue_when_probed: bool,
+    /// Que dijo `yt-dlp --version`, o por que no se puede usar. Se averigua en
+    /// un hilo al arrancar para poder avisar antes de que alguien apriete
+    /// "descargar" y se coma el error del proceso.
+    pub ytdlp: Option<Result<String, String>>,
     /// Cuantos trabajos habia activos en el frame anterior. Sirve para avisar
     /// cuando la cola pasa de tener trabajo a estar quieta, y no en cada
     /// archivo: encolar diez avisaria diez veces.
@@ -143,6 +149,7 @@ impl App {
             preview_error: None,
             probing: false,
             enqueue_when_probed: false,
+            ytdlp: None,
             activos_antes: 0,
             paste_requested: false,
             backend,
@@ -343,8 +350,10 @@ impl App {
         self.pump_paste();
 
         for message in self.update_rx.try_iter() {
-            let UpdateMessage::State(state) = message;
-            self.update = state;
+            match message {
+                UpdateMessage::State(state) => self.update = state,
+                UpdateMessage::Ytdlp(resultado) => self.ytdlp = Some(resultado),
+            }
         }
 
         if self.themes.needs_reload() {
@@ -614,6 +623,15 @@ impl App {
 
     pub fn check_updates(&self) {
         crate::updates::check(self.update_tx.clone());
+    }
+
+    /// Pregunta por yt-dlp en un hilo: arrancar la ventana no puede depender de
+    /// lanzar un proceso.
+    pub fn check_ytdlp(&self) {
+        let tx = self.update_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(UpdateMessage::Ytdlp(crate::backend::ytdlp::version()));
+        });
     }
 
     pub fn hides_to_tray(&self) -> bool {

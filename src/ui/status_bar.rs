@@ -26,10 +26,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     update_corner(app, ui);
                     ui.add_space(16.0);
+                    ytdlp_corner(app, ui);
+                    ui.add_space(16.0);
                     ui.label(caption(app.theme_label(), &palette));
                 });
             });
         });
+}
+
+/// Solo dice algo cuando yt-dlp no se puede usar: si anda, su version queda en
+/// el hover y el pie no se llena de ruido.
+fn ytdlp_corner(app: &App, ui: &mut egui::Ui) {
+    let palette = app.palette;
+    match &app.ytdlp {
+        Some(Ok(version)) => {
+            ui.label(caption(format!("yt-dlp {version}"), &palette));
+        }
+        Some(Err(reason)) => {
+            ui.label(text(
+                "sin yt-dlp no puedo bajar nada",
+                11.0,
+                Weight::Medium,
+                palette.warning,
+            ))
+            .on_hover_text(reason.clone());
+        }
+        // Todavia no contesto el hilo: mejor callarse que decir algo falso.
+        None => {}
+    }
 }
 
 fn update_corner(app: &mut App, ui: &mut egui::Ui) {

@@ -41,6 +41,11 @@ con velocidad y tiempo restante, `esperando ffmpeg` mientras se unen las
 pistas, y `listo` con el archivo que quedo. Los que ya terminaron ofrecen
 `abrir carpeta`.
 
+Al arrancar, la app le pregunta la version a `yt-dlp` en un hilo. Si anda, el
+pie lo dice (`yt-dlp 2026.08.19`); si falta o el binario del PATH no es yt-dlp,
+avisa ahi mismo en ambar con el motivo en el hover, en vez de dejar que el
+usuario lo descubra cuando ya apreto "descargar".
+
 Cuando la cola deja de tener trabajo, la app avisa por el escritorio con
 `notify-send`. Avisa una vez, no por archivo: al encolar diez enlaces, diez
 notificaciones serian una lluvia justo cuando el usuario esta mirando la

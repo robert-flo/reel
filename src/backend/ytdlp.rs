@@ -43,6 +43,37 @@ pub(crate) fn ytdlp_binary() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("yt-dlp"))
 }
 
+/// La version de yt-dlp, o por que no se puede usar.
+///
+/// Sirve para avisar al arrancar y no cuando el usuario ya apreto "descargar":
+/// un binario que falta o que no es yt-dlp se descubre mejor antes.
+pub(crate) fn version() -> Result<String, String> {
+    let salida = Proc::new(ytdlp_binary())
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => {
+                "no encuentro yt-dlp: instalalo (en Arch, `sudo pacman -S yt-dlp`)".to_string()
+            }
+            _ => format!("no pude ejecutar yt-dlp: {error}"),
+        })?;
+
+    if !salida.status.success() {
+        return Err(format!(
+            "yt-dlp no contesto su version (salio con {}): revisa la instalacion",
+            salida.status
+        ));
+    }
+
+    let version = String::from_utf8_lossy(&salida.stdout).trim().to_string();
+    if version.is_empty() {
+        return Err("yt-dlp no dijo su version: el binario del PATH no parece yt-dlp".into());
+    }
+    Ok(version)
+}
+
 fn default_dir(kind: Kind) -> PathBuf {
     let dirs = directories::UserDirs::new();
     let fallback = std::env::temp_dir();

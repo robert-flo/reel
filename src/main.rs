@@ -79,6 +79,7 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(&waker);
     app.start_themes();
     app.check_updates();
+    app.check_ytdlp();
     if open_settings {
         app.open_settings();
     }
