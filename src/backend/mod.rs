@@ -917,11 +917,38 @@ echo "DONE|$final"
     const LISTA_DE_PRUEBA: &str =
         "https://www.youtube.com/playlist?list=PLbpi6ZahtOH6Blw3RGYpWkSByi_T7Rygb";
 
-    /// Un video libre y real, pero diminuto (menos de 2 KB): alcanza para
-    /// probar la invocacion completa sin bajar nada de peso. Los "mp4" de
-    /// pocos bytes que tambien hay en el sitio no sirven: ffmpeg los rechaza al
-    /// incrustar la caratula, y esa falla es del archivo, no de la app.
-    const VIDEO_DE_PRUEBA: &str = "https://archive.org/details/stufffffff";
+    /// Un video libre, real y chico (16 KB) que **aguanta el postprocesado**:
+    /// ffmpeg le incrusta metadatos y caratula sin quejarse.
+    ///
+    /// Costo encontrarlo. Los "mp4" de pocos cientos de bytes que tambien hay
+    /// en el sitio no sirven: son archivos falsos y ffmpeg los rechaza al
+    /// incrustar la caratula, con un error que parece de la app y es del
+    /// archivo. Ese fixture invalido hizo fallar tres pruebas distintas antes
+    /// de que se entendiera.
+    const VIDEO_DE_PRUEBA: &str = "https://archive.org/details/0.03-orange";
+
+    /// Los tags de un archivo, con ffprobe, para poder afirmar que el
+    /// postprocesado escribio lo que dice que escribio.
+    fn tags_de(path: &Path) -> String {
+        let salida = Proc::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format_tags",
+                "-of",
+                "default=noprint_wrappers=1",
+            ])
+            .arg(path)
+            .output();
+        match salida {
+            Ok(salida) => String::from_utf8_lossy(&salida.stdout).into_owned(),
+            Err(error) => {
+                eprintln!("no pude leer los tags: {error}");
+                String::new()
+            }
+        }
+    }
 
     /// La unica prueba que sale a la red, y por eso no corre con las demas.
     ///
@@ -1149,6 +1176,22 @@ echo "DONE|$final"
             pasos.iter().any(|paso| paso == "EmbedThumbnail"),
             "yt-dlp no aviso que estaba poniendo la caratula: la plantilla del postprocess no funciona ({pasos:?})"
         );
+
+        // Y que los metadatos hayan quedado escritos de verdad, no solo que el
+        // paso se haya anunciado. Los valores son los del video de prueba.
+        let ruta = finales.clone().expect("deberia haber ruta");
+        let tags = tags_de(Path::new(&ruta));
+        println!("tags del archivo:\n{tags}");
+        for esperado in [
+            "title=0.03 Orange",
+            "artist=Ale.10",
+            "comment=https://archive.org",
+        ] {
+            assert!(
+                tags.contains(esperado),
+                "falta {esperado:?} en los tags del archivo:\n{tags}"
+            );
+        }
         println!(
             "OK descarga-real ({progresos} de progreso, {} de postprocesado)",
             pasos.len()
@@ -1324,8 +1367,10 @@ echo "DONE|$final"
 
         let video = salida.join("video");
         std::fs::create_dir_all(&video).expect("deberia crear la carpeta");
-        // Un archivo con el nombre que va a buscar yt-dlp, pero roto.
-        let roto = video.join("stufffffff.mov");
+        // Un archivo con el nombre que va a buscar yt-dlp, pero roto. El
+        // titulo del video de prueba es "0.03 Orange", y con `-f worst` y la
+        // plantilla por defecto el archivo es ese nombre en mp4.
+        let roto = video.join("0.03 Orange.mp4");
         std::fs::write(&roto, b"ARCHIVO CORRUPTO").expect("deberia escribir el roto");
         let antes = std::fs::metadata(&roto).expect("deberia medirlo").len();
 
@@ -1334,14 +1379,24 @@ echo "DONE|$final"
         // (ffmpeg lo rechaza), que seria una falla por otro motivo.
         let options = Options {
             output_dir: Some(video.clone()),
+            filename_template: Some("%(title).120s.%(ext)s".into()),
             metadata: false,
             chapters: false,
             ..Options::default()
         };
 
+        // El peor formato, y al final: el ultimo `-f` es el que gana, y asi se
+        // prueba el salteo sin bajar el video entero.
+        let peor = |mut args: Vec<String>| {
+            args.push("-f".into());
+            args.push("worst".into());
+            args
+        };
+
         // Primero sin forzar: yt-dlp tiene que saltearlo y dejarlo roto, que es
         // el limite que esto viene a resolver.
         let (args, _) = download_args(VIDEO_DE_PRUEBA, &options);
+        let args = peor(args);
         let salida_ytdlp = Proc::new(ytdlp_binary())
             .args(&args)
             .output()
@@ -1361,6 +1416,7 @@ echo "DONE|$final"
             ..options
         };
         let (args, _) = download_args(VIDEO_DE_PRUEBA, &forzado);
+        let args = peor(args);
         let salida_ytdlp = Proc::new(ytdlp_binary())
             .args(&args)
             .output()

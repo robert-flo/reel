@@ -268,10 +268,18 @@ reintentar, que una lista se expanda a una fila por video y que nadie pase de
 "cancelado" a "listo".
 
 `make selfcheck-net` es la unica que sale a internet. Usa el yt-dlp de verdad
-para comprobar el contrato que las demas no pueden, porque el de mentira acepta
-cualquier flag: lee los metadatos de un video libre, le pasa los mismos
-argumentos que armaria la app y confirma que el progreso y los avisos de
-postprocesado llegan con la forma que la cola sabe leer. Tambien comprueba que
+para comprobar lo que las demas no pueden, porque el de mentira acepta cualquier
+flag. Corre sobre un video libre de 16 KB que **aguanta el postprocesado**:
+
+- Lee sus metadatos, le pasa los mismos argumentos que armaria la app y
+  confirma que el progreso y los avisos de postprocesado llegan con la forma
+  que la cola sabe leer.
+- Comprueba con `ffprobe` que los metadatos queden **escritos** en el archivo
+  (titulo, autor y la url), no solo que el paso se haya anunciado.
+- Confirma que una lista se reconozca como lista y no como un video con titulo
+  raro.
+- Deja un archivo corrupto y comprueba que un intento normal lo saltea, y que
+  `volver a bajar` lo baja de nuevo y lo reemplaza. Tambien comprueba que
 una lista de reproduccion se reconozca como lista y no como un video con titulo
 raro, y que `volver a bajar` arregle de verdad un archivo que quedo roto: deja
 un archivo corrupto, comprueba que un intento normal lo saltea, y que forzando
