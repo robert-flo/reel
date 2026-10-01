@@ -113,7 +113,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // "a la cola", pegado a la derecha y centrado en la tarjeta,
                 // como en el boceto.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // Una lista grande se confirma en dos toques: el primero
+                    // pregunta y cambia el boton, el segundo encola. Un
+                    // encolado de gigabytes no deberia salir de un clic que
+                    // quiza se queria dar en otro lado.
+                    let esperando = app.confirmar_lista == preview.playlist_count;
                     let etiqueta = match preview.playlist_count {
+                        Some(cuantos) if App::pide_confirmacion(cuantos) && esperando => {
+                            format!("confirmar {cuantos}")
+                        }
                         Some(cuantos) => format!("encolar {cuantos}"),
                         None => "descargar".to_string(),
                     };
@@ -130,7 +138,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .corner_radius(CornerRadius::same(8)),
                     );
                     if go.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        app.enqueue_preview();
+                        match preview.playlist_count {
+                            // Primer toque en una lista grande: queda armado y
+                            // no encola. El segundo confirma.
+                            Some(cuantos) if App::pide_confirmacion(cuantos) && !esperando => {
+                                app.confirmar_lista = Some(cuantos);
+                            }
+                            _ => {
+                                app.confirmar_lista = None;
+                                app.enqueue_preview();
+                            }
+                        }
                     }
                 });
             });

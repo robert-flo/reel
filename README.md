@@ -46,6 +46,12 @@ Si el enlace es una lista y no un video, la ficha lo dice: `es una lista: 19
 videos`, y el boton cambia a `encolar 19`. Vale avisarlo porque
 `--no-playlist` **no** frena una url de lista: yt-dlp la baja entera.
 
+Una lista de **diez videos o mas** se confirma en dos toques: el primero cambia
+el boton a `confirmar 19` y el segundo encola. Es a proposito: una lista de 19
+videos de YouTube son gigabytes, y encolarla no deberia salir de un clic que
+quiza se queria dar en otro lado. Con menos de diez, encolarla es barato y
+preguntar solo molesta.
+
 Al encolarla, la lista **se expande a una fila por video**: se pide el listado
 con `--flat-playlist` (que no baja nada, solo los titulos y las duraciones) y
 cada video entra como un trabajo propio, con su progreso, su cancelacion y su

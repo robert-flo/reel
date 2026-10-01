@@ -63,6 +63,11 @@ pub struct App {
     /// un hilo al arrancar para poder avisar antes de que alguien apriete
     /// "descargar" y se coma el error del proceso.
     pub ytdlp: Option<Result<String, String>>,
+    /// Una lista grande quedo esperando que se confirme. El primer toque en el
+    /// boton solo pregunta; el segundo encola. Una lista de 19 videos de
+    /// YouTube son gigabytes, y encolarla por error cuesta ancho de banda y
+    /// disco, no un clic.
+    pub confirmar_lista: Option<u64>,
     /// Cuantos trabajos habia activos en el frame anterior. Sirve para avisar
     /// cuando la cola pasa de tener trabajo a estar quieta, y no en cada
     /// archivo: encolar diez avisaria diez veces.
@@ -149,6 +154,7 @@ impl App {
             preview_error: None,
             probing: false,
             enqueue_when_probed: false,
+            confirmar_lista: None,
             ytdlp: None,
             activos_antes: 0,
             paste_requested: false,
@@ -424,6 +430,15 @@ impl App {
         avisar("reel", &cuerpo);
     }
 
+    /// Cuantos videos tiene que traer una lista para pedir confirmacion. Con
+    /// menos, encolarla es un gesto barato y preguntar solo molesta.
+    pub const LISTA_GRANDE: u64 = 10;
+
+    /// Decide si hay que preguntar antes de encolar una lista.
+    pub fn pide_confirmacion(cuantos: u64) -> bool {
+        cuantos >= Self::LISTA_GRANDE
+    }
+
     /// Lee un enlace y lo encola solo, sin pasar por el boton. Es lo que usan
     /// "Pegar y descargar" del tray y `reel --yoink URL`: el mismo camino, con
     /// el enlace viniendo de otro lado.
@@ -556,6 +571,8 @@ impl App {
         self.preview_url = None;
         self.preview_error = None;
         self.probing = true;
+        // La lista que estaba por confirmarse ya no es la que se va a encolar.
+        self.confirmar_lista = None;
         self.backend.send(Command::Preview { url });
     }
 
@@ -772,5 +789,22 @@ impl fastframe_shell::Resident for App {
 
     fn shutdown(&mut self) {
         self.backend.send(Command::Shutdown);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::App;
+
+    /// Una lista chica se encola de un toque; una grande pide confirmar. El
+    /// limite es lo unico que decide, asi que se prueba el borde.
+    #[test]
+    fn las_listas_grandes_piden_confirmacion() {
+        assert!(!App::pide_confirmacion(0));
+        assert!(!App::pide_confirmacion(1));
+        assert!(!App::pide_confirmacion(App::LISTA_GRANDE - 1));
+        assert!(App::pide_confirmacion(App::LISTA_GRANDE));
+        assert!(App::pide_confirmacion(19));
+        assert!(App::pide_confirmacion(500));
     }
 }
