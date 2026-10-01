@@ -40,6 +40,13 @@ soporta 1800 y pico de sitios, asi que esto no es solo YouTube.
 Si estas en otro lado y queres mandar algo directo, el menu del tray tiene
 `Pegar y descargar`: agarra el portapapeles, lee el enlace y lo encola solo.
 
+### Listas de reproduccion
+
+Si el enlace es una lista y no un video, la ficha lo dice: `es una lista: 19
+videos`, y el boton cambia a `encolar 19`. Vale avisarlo porque
+`--no-playlist` **no** frena una url de lista: yt-dlp la baja entera. La fila de
+la cola muestra el progreso de la lista como un todo, no una fila por video.
+
 ### Los formatos
 
 | Formato | Que baja |
@@ -135,6 +142,7 @@ lo pone en una ventana donde la cola es la pantalla principal.
 | | yoinks | plugin de barra | reel |
 |---|---|---|---|
 | Varias descargas a la vez | no | no | si, hasta 3, con progreso por item |
+| Listas de reproduccion | no | no | si, avisando cuantos videos trae |
 | Reanudar lo cortado | no | no | si, reintentar reanuda el `.part` |
 | Carpeta y nombre de salida | fijos | fijos | configurables |
 | Cookies del navegador | no | no | si |
@@ -206,7 +214,9 @@ reintentar y que nadie pase de "cancelado" a "listo".
 para comprobar el contrato que las demas no pueden, porque el de mentira acepta
 cualquier flag: lee los metadatos de un video libre, le pasa los mismos
 argumentos que armaria la app y confirma que el progreso y los avisos de
-postprocesado llegan con la forma que la cola sabe leer.
+postprocesado llegan con la forma que la cola sabe leer. Tambien comprueba que
+una lista de reproduccion se reconozca como lista y no como un video con titulo
+raro.
 
 ## Estructura
 

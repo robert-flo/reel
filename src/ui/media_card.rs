@@ -87,6 +87,22 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         }
                         ui.label(caption(meta.join("  ·  "), &palette));
 
+                        // `--no-playlist` no frena una url de playlist: se
+                        // baja entera. Mejor decirlo antes de que alguien
+                        // apriete el boton.
+                        if let Some(cuantos) = preview.playlist_count {
+                            ui.add_space(4.0);
+                            ui.label(text(
+                                format!(
+                                    "es una lista: {cuantos} {}",
+                                    if cuantos == 1 { "video" } else { "videos" }
+                                ),
+                                11.0,
+                                Weight::Medium,
+                                palette.warning,
+                            ));
+                        }
+
                         ui.add_space(12.0);
                         formats(app, ui);
                         ui.add_space(10.0);
@@ -97,10 +113,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // "a la cola", pegado a la derecha y centrado en la tarjeta,
                 // como en el boceto.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let etiqueta = match preview.playlist_count {
+                        Some(cuantos) => format!("encolar {cuantos}"),
+                        None => "descargar".to_string(),
+                    };
                     let go = ui.add_sized(
                         Vec2::new(140.0, 38.0),
                         egui::Button::new(text(
-                            "descargar",
+                            etiqueta,
                             13.0,
                             Weight::SemiBold,
                             palette.on_accent,

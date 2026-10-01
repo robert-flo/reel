@@ -315,6 +315,42 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Lee los metadatos de yt-dlp. Separado de `probe` para poder probarlo con
+/// JSON de verdad sin lanzar un proceso.
+fn media_from_json(json: &serde_json::Value) -> Media {
+    // Una url de playlist devuelve la playlist, no un video: el titulo es el
+    // de la lista y no hay duracion. Se cuenta para poder avisarlo.
+    let playlist_count = (json["_type"].as_str() == Some("playlist"))
+        .then(|| json["playlist_count"].as_u64())
+        .flatten();
+
+    // En un video suelto la miniatura viene en `thumbnail`; en una playlist no,
+    // asi que se usa la de la primera entrada.
+    let thumbnail_url = json["thumbnail"]
+        .as_str()
+        .or_else(|| json["thumbnails"][0]["url"].as_str())
+        .or_else(|| json["entries"][0]["thumbnail"].as_str())
+        .map(str::to_string);
+
+    Media {
+        title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
+        uploader: json["uploader"]
+            .as_str()
+            .or_else(|| json["channel"].as_str())
+            .unwrap_or("")
+            .to_string(),
+        // En una playlist la duracion no significa nada: es la de la lista
+        // entera y yt-dlp no la da.
+        duration: playlist_count
+            .is_none()
+            .then(|| json["duration"].as_f64())
+            .flatten(),
+        host: json["extractor_key"].as_str().unwrap_or("").to_lowercase(),
+        thumbnail_url,
+        playlist_count,
+    }
+}
+
 pub(crate) fn probe(url: &str) -> Result<Media, String> {
     let output = Proc::new(ytdlp_binary())
         .args(["-J", "--no-playlist", "--no-warnings", url])
@@ -331,17 +367,7 @@ pub(crate) fn probe(url: &str) -> Result<Media, String> {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("yt-dlp devolvio algo que no pude leer: {error}"))?;
 
-    Ok(Media {
-        title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
-        uploader: json["uploader"]
-            .as_str()
-            .or_else(|| json["channel"].as_str())
-            .unwrap_or("")
-            .to_string(),
-        duration: json["duration"].as_f64(),
-        host: json["extractor_key"].as_str().unwrap_or("").to_lowercase(),
-        thumbnail_url: json["thumbnail"].as_str().map(|s| s.to_string()),
-    })
+    Ok(media_from_json(&json))
 }
 
 /// Los argumentos de la descarga, en orden. Aparte de `run_job` para poder
@@ -810,6 +836,54 @@ mod tests {
     /// La descarga pide las dos plantillas: la del progreso y la del
     /// postprocesado. Sin la segunda, la fila nunca diria que esta esperando
     /// ffmpeg.
+    /// Un video suelto se lee como siempre.
+    #[test]
+    fn lee_un_video_suelto() {
+        let json = serde_json::json!({
+            "title": "Un video",
+            "uploader": "alguien",
+            "duration": 213.0,
+            "extractor_key": "Youtube",
+            "thumbnail": "https://ejemplo.test/mini.jpg"
+        });
+        let media = media_from_json(&json);
+        assert_eq!(media.title, "Un video");
+        assert_eq!(media.uploader, "alguien");
+        assert_eq!(media.duration, Some(213.0));
+        assert_eq!(media.host, "youtube");
+        assert_eq!(media.playlist_count, None);
+        assert_eq!(
+            media.thumbnail_url.as_deref(),
+            Some("https://ejemplo.test/mini.jpg")
+        );
+    }
+
+    /// Una playlist no es un video: se marca cuantos trae, no se inventa una
+    /// duracion (la de la lista no significa nada) y la miniatura sale de la
+    /// primera entrada, que es lo unico que yt-dlp da.
+    #[test]
+    fn reconoce_una_playlist() {
+        let json = serde_json::json!({
+            "_type": "playlist",
+            "title": "Una lista",
+            "uploader": "alguien",
+            "playlist_count": 19,
+            "extractor_key": "Youtube",
+            "entries": [{ "thumbnail": "https://ejemplo.test/primera.jpg" }]
+        });
+        let media = media_from_json(&json);
+        assert_eq!(media.playlist_count, Some(19));
+        assert_eq!(
+            media.duration, None,
+            "la duracion de una lista no es de un video"
+        );
+        assert_eq!(media.title, "Una lista");
+        assert_eq!(
+            media.thumbnail_url.as_deref(),
+            Some("https://ejemplo.test/primera.jpg")
+        );
+    }
+
     /// Cancelar deja el `.part` en la carpeta y el reintento vuelve a pedir la
     /// misma, asi que yt-dlp reanuda donde iba. Se pide explicito para no
     /// depender de que su default siga siendo reanudar.

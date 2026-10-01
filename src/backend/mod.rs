@@ -132,6 +132,10 @@ pub struct Media {
     pub duration: Option<f64>,
     pub host: String,
     pub thumbnail_url: Option<String>,
+    /// Cuando el enlace es una playlist y no un video: cuantos trae. `None`
+    /// para un video suelto. Sirve para avisar antes de encolar, porque
+    /// `--no-playlist` no frena una url de playlist: la baja entera.
+    pub playlist_count: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -832,6 +836,11 @@ echo "DONE|$final"
         println!("OK carrera");
     }
 
+    /// Una lista de verdad, para comprobar que se reconoce como lista y no
+    /// como un video con titulo raro.
+    const LISTA_DE_PRUEBA: &str =
+        "https://www.youtube.com/playlist?list=PLbpi6ZahtOH6Blw3RGYpWkSByi_T7Rygb";
+
     /// Un video libre y real, pero diminuto (menos de 2 KB): alcanza para
     /// probar la invocacion completa sin bajar nada de peso. Los "mp4" de
     /// pocos bytes que tambien hay en el sitio no sirven: ffmpeg los rechaza al
@@ -869,6 +878,33 @@ echo "DONE|$final"
         };
         assert!(!media.title.is_empty(), "el probe no trajo titulo");
         assert!(!media.host.is_empty(), "el probe no trajo de donde viene");
+        assert_eq!(
+            media.playlist_count, None,
+            "un video suelto no puede leerse como lista"
+        );
+
+        // Y una lista de verdad, que es el caso que antes se colaba: se
+        // encolaba la lista entera creyendo que era un video.
+        match probe(LISTA_DE_PRUEBA) {
+            Ok(lista) => {
+                println!(
+                    "lista OK: {:?} con {:?} videos",
+                    lista.title, lista.playlist_count
+                );
+                let cuantos = lista
+                    .playlist_count
+                    .expect("una url de playlist tiene que reconocerse como lista");
+                assert!(cuantos > 1, "una lista de {cuantos} no es una lista");
+                assert_eq!(
+                    lista.duration, None,
+                    "la duracion de una lista no es la de un video"
+                );
+            }
+            Err(reason) => {
+                eprintln!("no pude leer la lista de prueba: {reason}");
+                panic!("la deteccion de listas no se pudo probar");
+            }
+        }
 
         // Cada fase en su carpeta: compartirla hacia que una descarga anterior
         // dejara el archivo puesto y la siguiente se saltara el postprocesado,
