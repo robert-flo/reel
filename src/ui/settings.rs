@@ -57,6 +57,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) -> bool {
             ui.add_space(16.0);
             cookies(ui, app, &palette);
             ui.add_space(16.0);
+            sponsorblock_setting(ui, app, &palette);
+            ui.add_space(16.0);
             themes(ui, app, &palette);
             close
         });
@@ -78,11 +80,13 @@ fn commit(app: &mut App) {
     let changed = app.settings.output_dir != app.draft.output_dir
         || app.settings.filename_template != app.draft.filename_template
         || app.settings.rate_limit != app.draft.rate_limit
+        || app.settings.sponsorblock != app.draft.sponsorblock
         || app.settings.subtitle_list() != app.draft_subtitles;
     if changed {
         app.settings.output_dir = app.draft.output_dir.clone();
         app.settings.filename_template = app.draft.filename_template.clone();
         app.settings.rate_limit = app.draft.rate_limit.clone();
+        app.settings.sponsorblock = app.draft.sponsorblock;
         app.settings.set_subtitles(&app.draft_subtitles.clone());
         app.settings_changed();
     }
@@ -403,6 +407,19 @@ fn cookies(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) 
     } else {
         hint(ui, &tr.browsers_found(&detected.join(", ")), palette.dim);
     }
+}
+
+/// Quitar patrocinios integrados en el video mediante SponsorBlock.
+fn sponsorblock_setting(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Palette) {
+    let tr = app.tr();
+    section(ui, tr.section_sponsorblock, palette);
+
+    let activo = app.draft.sponsorblock;
+    if chip(ui, tr.sponsorblock_toggle, activo, palette).clicked() {
+        app.draft.sponsorblock = !activo;
+        commit(app);
+    }
+    hint(ui, tr.sponsorblock_hint, palette.dim);
 }
 
 /// El selector de tema: seguir el escritorio, o una paleta concreta. La

@@ -104,6 +104,8 @@ i18n_strings! {
     enqueue: { en: "queue", es: "encolar" }
     download: { en: "download", es: "descargar" }
     chapters: { en: "chapters", es: "capítulos" }
+    sponsorblock: { en: "sponsorblock", es: "sponsorblock" }
+    sponsorblock_tip: { en: "skip sponsor segments with SponsorBlock", es: "salta patrocinios con SponsorBlock" }
     metadata_artwork: { en: "metadata + artwork", es: "metadatos + carátula" }
     subtitles: { en: "subtitles", es: "subtítulos" }
     browser_cookies: { en: "browser cookies", es: "cookies del navegador" }
@@ -159,6 +161,9 @@ i18n_strings! {
     section_format: { en: "FORMAT", es: "FORMATO" }
     section_filename: { en: "FILE NAME", es: "NOMBRE DEL ARCHIVO" }
     section_rate: { en: "SPEED LIMIT", es: "LÍMITE DE VELOCIDAD" }
+    section_sponsorblock: { en: "SPONSORBLOCK", es: "SPONSORBLOCK" }
+    sponsorblock_toggle: { en: "remove sponsor segments", es: "quitar patrocinios" }
+    sponsorblock_hint: { en: "automatically cut out sponsored segments in YouTube videos", es: "corta automáticamente los segmentos patrocinados en videos de YouTube" }
     section_subtitles: { en: "SUBTITLES", es: "SUBTÍTULOS" }
     section_cookies: { en: "BROWSER COOKIES", es: "COOKIES DEL NAVEGADOR" }
     section_theme: { en: "THEME", es: "TEMA" }

@@ -43,6 +43,17 @@ pub const FORMATS: &[Format] = &[
         ],
     },
     Format {
+        id: "1440p",
+        label: "1440p",
+        kind: Kind::Video,
+        args: &[
+            "-f",
+            "bv*[height<=1440]+ba/b",
+            "--merge-output-format",
+            "mp4",
+        ],
+    },
+    Format {
         id: "1080p",
         label: "1080p",
         kind: Kind::Video,
@@ -92,6 +103,12 @@ pub const FORMATS: &[Format] = &[
         kind: Kind::Audio,
         args: &["-f", "ba/b", "-x", "--audio-format", "opus"],
     },
+    Format {
+        id: "flac",
+        label: "flac",
+        kind: Kind::Audio,
+        args: &["-f", "ba/b", "-x", "--audio-format", "flac"],
+    },
 ];
 
 /// La plantilla de nombre que usa la app cuando no se le dice otra. Vive aca y
@@ -117,6 +134,8 @@ pub struct Options {
     pub filename_template: Option<String>,
     /// `--limit-rate`: limite maximo de descarga (ej: "5M", "1M", "500K").
     pub rate_limit: Option<String>,
+    /// `--sponsorblock-remove sponsor`: quita segmentos de patrocinio en YouTube.
+    pub sponsorblock: bool,
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
@@ -141,6 +160,7 @@ impl Default for Options {
             output_dir: None,
             filename_template: None,
             rate_limit: None,
+            sponsorblock: false,
             playlist: false,
             force: false,
         }

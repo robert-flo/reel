@@ -265,25 +265,51 @@ fn extras(app: &mut App, ui: &mut egui::Ui) {
 
         if format.kind == Kind::Video {
             let mut chapters = app.options.chapters;
-            if toggle(ui, tr.chapters, &mut chapters, &mut first, &palette) {
+            if toggle(ui, tr.chapters, &mut chapters, &mut first, &palette, None) {
                 app.options.chapters = chapters;
+            }
+
+            let mut sponsorblock = app.options.sponsorblock;
+            if toggle(
+                ui,
+                tr.sponsorblock,
+                &mut sponsorblock,
+                &mut first,
+                &palette,
+                Some(tr.sponsorblock_tip),
+            ) {
+                app.options.sponsorblock = sponsorblock;
             }
         }
 
         let mut metadata = app.options.metadata;
-        if toggle(ui, tr.metadata_artwork, &mut metadata, &mut first, &palette) {
+        if toggle(
+            ui,
+            tr.metadata_artwork,
+            &mut metadata,
+            &mut first,
+            &palette,
+            None,
+        ) {
             app.options.metadata = metadata;
         }
 
         let mut subtitles = app.settings.subtitle_languages().is_some();
-        if toggle(ui, tr.subtitles, &mut subtitles, &mut first, &palette) {
+        if toggle(ui, tr.subtitles, &mut subtitles, &mut first, &palette, None) {
             // Tocar aca es elegir un idioma, no apagarlos todos: los que haya
             // en el panel se quedan.
             app.toggle_subtitle("es");
         }
 
         let mut cookies = app.options.cookies_from_browser.is_some();
-        if toggle(ui, tr.browser_cookies, &mut cookies, &mut first, &palette) {
+        if toggle(
+            ui,
+            tr.browser_cookies,
+            &mut cookies,
+            &mut first,
+            &palette,
+            None,
+        ) {
             app.options.cookies_from_browser = cookies.then(|| app.default_browser.clone());
         }
     });
@@ -297,6 +323,7 @@ fn toggle(
     value: &mut bool,
     first: &mut bool,
     palette: &crate::palette::Palette,
+    tooltip: Option<&str>,
 ) -> bool {
     if !*first {
         ui.label(text("  ·  ", 11.0, Weight::Regular, palette.outline));
@@ -308,9 +335,12 @@ fn toggle(
     } else {
         palette.dim
     };
-    let response = ui
+    let mut response = ui
         .add(egui::Label::new(text(label, 11.0, Weight::Medium, color)).sense(Sense::click()))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if let Some(tip) = tooltip {
+        response = response.on_hover_text(tip);
+    }
 
     if response.clicked() {
         *value = !*value;

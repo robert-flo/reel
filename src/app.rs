@@ -260,6 +260,7 @@ impl App {
             let limit = self.settings.rate_limit.trim();
             (!limit.is_empty()).then(|| limit.to_string())
         };
+        self.options.sponsorblock = self.settings.sponsorblock;
     }
 
     /// Abre el panel con una copia fresca de lo guardado, para que un borrador
@@ -1595,5 +1596,28 @@ mod tests {
             ctx.memory(|m| m.focused()),
             Some(egui::Id::new("queue_search_input"))
         );
+    }
+
+    #[test]
+    fn formatos_1440p_y_flac_disponibles() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.select_format("1440p");
+        assert_eq!(app.options.format_id, "1440p");
+
+        app.select_format("flac");
+        assert_eq!(app.options.format_id, "flac");
+    }
+
+    #[test]
+    fn sponsorblock_se_sincroniza() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        assert!(!app.options.sponsorblock);
+        app.settings.sponsorblock = true;
+        app.settings_changed();
+        assert!(app.options.sponsorblock);
     }
 }

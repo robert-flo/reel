@@ -11,6 +11,7 @@ use super::Metrics;
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
+    let tr = app.tr();
 
     egui::Panel::bottom("status-bar")
         .exact_size(Metrics::STATUS_BAR)
@@ -21,7 +22,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         )
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(caption(app.output_dir_label(), &palette));
+                let dir_hit = ui
+                    .add(
+                        egui::Label::new(caption(app.output_dir_label(), &palette))
+                            .sense(Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text(tr.open_folder);
+                if dir_hit.clicked() {
+                    let dir = app.options.output_dir.clone().unwrap_or_else(|| {
+                        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                        std::path::PathBuf::from(home).join("Videos")
+                    });
+                    let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+                }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     update_corner(app, ui);

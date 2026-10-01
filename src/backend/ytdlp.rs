@@ -620,6 +620,10 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         args.push("--limit-rate".into());
         args.push(rate_limit.clone());
     }
+    if options.sponsorblock && format.kind == Kind::Video {
+        args.push("--sponsorblock-remove".into());
+        args.push("sponsor".into());
+    }
     args.push(url.into());
 
     (args, dir)
@@ -1293,6 +1297,26 @@ mod tests {
         let (args, _) = download_args("https://ejemplo.test/v", &options);
         assert!(args.iter().any(|arg| arg == "--limit-rate"));
         assert!(args.iter().any(|arg| arg == "5M"));
+    }
+
+    #[test]
+    fn la_descarga_lleva_sponsorblock() {
+        let options = Options {
+            sponsorblock: true,
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--sponsorblock-remove"));
+        assert!(args.iter().any(|arg| arg == "sponsor"));
+
+        // En audio no debe agregarlo
+        let options_audio = Options {
+            format_id: "mp3".into(),
+            sponsorblock: true,
+            ..Options::default()
+        };
+        let (args_audio, _) = download_args("https://ejemplo.test/v", &options_audio);
+        assert!(!args_audio.iter().any(|arg| arg == "--sponsorblock-remove"));
     }
 
     #[test]

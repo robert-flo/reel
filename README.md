@@ -103,6 +103,13 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Velocidad acumulada y reintento inteligente**: la cabecera muestra la velocidad global
   de descarga sumando todos los procesos activos (`· 4.2 MB/s`); y el botón `reintentar fallidas (N)`
   únicamente relanza las descargas fallidas o canceladas, sin reencolar las que ya se completaron.
+- **Formatos 1440p (2K) y FLAC (Lossless)**: resoluciones de video hasta 1440p para monitores
+  QHD modernos y formato de audio FLAC de alta fidelidad sin compresión con pérdidas.
+- **Integración con SponsorBlock**: opción para remover automáticamente segmentos de publicidad
+  o patrocinios integrados en videos de YouTube (`--sponsorblock-remove sponsor`), seleccionable
+  en la ficha del enlace o por defecto en los ajustes.
+- **Acceso rápido a la carpeta de descargas**: la ruta en la barra de estado inferior es interactiva;
+  un clic abre directamente el directorio en el explorador de archivos del sistema.
 
 ### Falta
 
@@ -200,19 +207,21 @@ cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 | Formato | Que baja |
 |---|---|
 | `Mejor` | el mejor video con el mejor audio, en mp4 |
-| `4K` / `1080p` / `720p` | lo mejor hasta esa altura, en mp4 |
+| `4K` / `1440p` / `1080p` / `720p` | lo mejor hasta esa altura, en mp4 |
 | `mp3` | solo audio, extraido y con calidad 0 |
 | `m4a` | solo audio, en contenedor m4a (AAC nativo sin pérdida por recodificación) |
 | `opus` | solo audio, en opus |
+| `flac` | solo audio, compresión sin pérdida (FLAC lossless) |
 
 `metadatos + caratula` agrega los datos del video y la miniatura al archivo.
 `capitulos` los incrusta (solo video).
+`sponsorblock` corta automáticamente segmentos de patrocinio en YouTube (solo video).
 
 `Mejor` y las calidades de video piden el mejor par de pistas que ofrezca el
 sitio y las unen en mp4. Con YouTube eso suele dar **av1 de video y opus de
 audio**, que es lo mejor que hay pero no lo abre cualquier reproductor viejo.
 Si el archivo va a un televisor o a un telefono que no los soporte, elegi una
-altura concreta (`720p`) o bajalo en `mp3` o `m4a`. Los subtitulos se bajan y se incrustan en
+altura concreta (`720p`) o bajalo en `mp3`, `m4a` o `flac`. Los subtitulos se bajan y se incrustan en
 los idiomas que elijas en los ajustes (con fallback automático si solo hay
 subtítulos autogenerados).
 

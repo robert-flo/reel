@@ -30,6 +30,9 @@ pub struct Settings {
     /// Limite de velocidad para `--limit-rate`. Vacio es sin limite (ej: "5M", "1M").
     #[serde(default)]
     pub rate_limit: String,
+    /// Quitar patrocinios en videos via SponsorBlock (--sponsorblock-remove sponsor).
+    #[serde(default)]
+    pub sponsorblock: bool,
     /// Archivo de paleta elegido. `None` es seguir el tema del escritorio.
     pub theme: Option<String>,
     /// Idioma de la interfaz. Vacio o desconocido es ingles.
