@@ -1,14 +1,23 @@
-//! El hilo que habla con yt-dlp.
+//! Los hilos que hablan con yt-dlp.
 //!
-//! Dos llamadas por trabajo: `-J --no-playlist` para resolver titulo, autor y
+//! Un trabajo, un hilo: la cola baja varios a la vez, que es lo que promete el
+//! README y lo que el boceto muestra. El hilo supervisor solo despacha ordenes
+//! y nunca espera a un trabajo, asi que cancelar y encolar siguen andando
+//! mientras abajo se descarga.
+//!
+//! Por trabajo, dos llamadas: `-J --no-playlist` para resolver titulo, autor y
 //! duracion, y luego la descarga con `--newline --progress-template` para que
 //! el progreso llegue en lineas faciles de leer en vez del dibujo de barra.
 
-use std::collections::{HashMap, VecDeque};
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Read};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command as Proc, Stdio};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use super::{format_by_id, Command, Event, Kind, Media, Options, State};
 
@@ -18,7 +27,8 @@ const PROGRESS_TEMPLATE: &str =
     "download:PROGRESS|%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s";
 
 /// yt-dlp del PATH. Si algun dia se quiere el binario propio (como yoinks, que
-/// lo baja a ~/.yoinks/bin), este es el unico lugar que cambia.
+/// lo baja a ~/.yoinks/bin), este es el unico lugar que cambia. `REEL_YTDLP`
+/// apunta a otro, que es como se prueban las carreras sin bajar nada.
 fn ytdlp_binary() -> PathBuf {
     std::env::var_os("REEL_YTDLP")
         .map(PathBuf::from)
@@ -40,41 +50,84 @@ fn default_dir(kind: Kind) -> PathBuf {
     }
 }
 
+/// Los hijos vivos, para poder matarlos desde el supervisor mientras su hilo
+/// espera. El `Mutex` se suelta antes de esperar, asi que nadie se queda
+/// bloqueado detras de una descarga larga.
+type Running = Arc<Mutex<HashMap<u64, Child>>>;
+
+/// Cuantos trabajos pueden bajar a la vez. Sin tope, encolar treinta enlaces
+/// lanzaria treinta yt-dlp y treinta ffmpeg: la maquina deja de responder y las
+/// descargas se estorban entre si. Los que sobran quedan en espera hasta que
+/// se libere un cupo.
+pub const MAX_CONCURRENTES: usize = 3;
+
+/// El cupo de descargas simultaneas. Se pide antes de arrancar un trabajo y se
+/// devuelve cuando termina; pedirlo no bloquea al supervisor mas que un rato
+/// corto, porque los cupos se liberan solos.
+struct Cupos {
+    libres: Mutex<usize>,
+}
+
+/// El cupo de un trabajo. Se devuelve solo, cuando el trabajo suelta esto, asi
+/// que ningun camino de salida se puede olvidar de liberarlo.
+struct Cupo<'a> {
+    cupos: &'a Cupos,
+}
+
+impl Cupos {
+    fn new(total: usize) -> Self {
+        Self {
+            libres: Mutex::new(total),
+        }
+    }
+
+    /// Espera a que haya lugar. Mira cada pocos milisegundos en vez de dormir
+    /// sobre una condicion: los cupos se liberan desde otros hilos y el
+    /// supervisor tiene que poder despertar a atender lo que llegue.
+    fn tomar(&self, limite: Duration) -> Option<Cupo<'_>> {
+        let espera = Duration::from_millis(5);
+        let arranque = std::time::Instant::now();
+        loop {
+            {
+                let mut libres = lock(&self.libres);
+                if *libres > 0 {
+                    *libres -= 1;
+                    return Some(Cupo { cupos: self });
+                }
+            }
+            if arranque.elapsed() > limite {
+                return None;
+            }
+            std::thread::sleep(espera);
+        }
+    }
+}
+
+impl Drop for Cupo<'_> {
+    fn drop(&mut self) {
+        *lock(&self.cupos.libres) += 1;
+    }
+}
+
 pub fn worker<W>(commands: Receiver<Command>, events: Sender<Event>, wake: W)
 where
-    W: Fn() + Send + 'static,
+    W: Fn() + Send + Sync + 'static,
 {
-    let mut running: HashMap<u64, Child> = HashMap::new();
-    // Las ordenes que sacamos del canal mientras buscabamos cancelaciones y
-    // que todavia hay que atender. Sin esto, el Start que viaja detras de un
-    // Probe se perdia y el trabajo se quedaba en espera para siempre.
-    let mut pending: VecDeque<Command> = VecDeque::new();
+    let running: Running = Arc::new(Mutex::new(HashMap::new()));
+    // Un id que llego a cancelarse. Sirve para dos cosas: marcar el trabajo, y
+    // que su hilo no cuente despues un "listo" de algo que el usuario corto.
+    let cancelled: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
+    // En falso, un trabajo que termine durante el cierre ya no avisa nada.
+    let alive = Arc::new(AtomicBool::new(true));
+    let cupos = Arc::new(Cupos::new(MAX_CONCURRENTES));
+    let wake = Arc::new(wake);
+    let mut threads: Vec<JoinHandle<()>> = Vec::new();
 
-    loop {
-        let command = match pending.pop_front() {
-            Some(command) => command,
-            None => match commands.recv() {
-                Ok(command) => command,
-                Err(_) => break,
-            },
-        };
-
+    while let Ok(command) = commands.recv() {
         match command {
-            Command::Shutdown => {
-                for (_, mut child) in running.drain() {
-                    let _ = child.kill();
-                }
-                break;
-            }
+            Command::Shutdown => break,
             Command::Cancel { id } => {
-                if let Some(mut child) = running.remove(&id) {
-                    let _ = child.kill();
-                }
-                let _ = events.send(Event::StateChanged {
-                    id,
-                    state: State::Cancelled,
-                });
-                wake();
+                cancel(&running, &cancelled, &events, &*wake, id);
             }
             Command::Preview { url } => {
                 match probe(&url) {
@@ -88,30 +141,117 @@ where
                 wake();
             }
             Command::Start { id, url, options } => {
+                // Nace en espera, no descargando: el estado dice la verdad
+                // hasta que yt-dlp arranca de verdad, alla abajo.
                 let _ = events.send(Event::StateChanged {
                     id,
-                    state: State::Downloading,
+                    state: State::Queued,
                 });
                 wake();
-                download(id, &url, &options, &events, &wake, &mut running);
-            }
-        }
 
-        // Las ordenes de cancelar que llegaron mientras descargabamos se
-        // atienden ya; el resto se guarda en la fila y se atiende enseguida.
-        loop {
-            match commands.try_recv() {
-                Ok(Command::Cancel { id }) => {
-                    if let Some(mut child) = running.remove(&id) {
-                        let _ = child.kill();
+                let running = Arc::clone(&running);
+                let cancelled = Arc::clone(&cancelled);
+                let events_job = events.clone();
+                let wake_job = Arc::clone(&wake);
+                let alive = Arc::clone(&alive);
+                let cupos = Arc::clone(&cupos);
+                // Se resuelve aca y no dentro del hilo: con varios trabajos a
+                // la vez, leerlo alla seria una carrera entre todos.
+                let ytdlp = ytdlp_binary();
+
+                let handle = std::thread::Builder::new()
+                    .name(format!("reel-job-{id}"))
+                    .spawn(move || {
+                        // Esperar cupo es cosa del trabajo, no del supervisor:
+                        // asi el resto de la cola sigue andando mientras tanto.
+                        if let Some(_cupo) = cupos.tomar(Duration::from_secs(600)) {
+                            if let Err(error) = run_job(
+                                id,
+                                &ytdlp,
+                                &url,
+                                &options,
+                                &running,
+                                &cancelled,
+                                &events_job,
+                                &*wake_job,
+                                &alive,
+                            ) {
+                                log::error!("no pude atender el trabajo {id}: {error}");
+                            }
+                        } else {
+                            let _ = events_job.send(Event::StateChanged {
+                                id,
+                                state: State::Failed {
+                                    reason: "espere demasiado por un lugar en la cola".into(),
+                                },
+                            });
+                            wake_job();
+                        }
+                    });
+
+                match handle {
+                    Ok(handle) => threads.push(handle),
+                    Err(error) => {
+                        let _ = events.send(Event::StateChanged {
+                            id,
+                            state: State::Failed {
+                                reason: format!("no pude crear el hilo de descarga: {error}"),
+                            },
+                        });
+                        wake();
                     }
                 }
-                Ok(other) => pending.push_back(other),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return,
             }
         }
     }
+
+    // Cierre: primero se mata todo, despues se espera. Al reves, un hijo vivo
+    // dejaria a su hilo esperando para siempre.
+    alive.store(false, Ordering::SeqCst);
+    for (_, mut child) in lock(&running).drain() {
+        let _ = child.kill();
+    }
+    for thread in threads {
+        let _ = thread.join();
+    }
+}
+
+/// Mata el hijo del trabajo y lo da por cancelado.
+///
+/// El orden importa: la marca va antes de sacarlo de la lista. Si el trabajo
+/// estaba terminando justo ahora, sacarlo de la lista es la carrera que decide
+/// quien reporta el final, y con la marca ya puesta el suyo no cuenta un
+/// "listo" encima del "cancelado". Si ya no estaba, termino antes de que
+/// llegara la orden y la marca no cambia nada.
+///
+/// Los ids marcados se acumulan mientras la app vive: son unos pocos bytes por
+/// cancelacion, y borrarlos volveria a abrir justo la carrera que esto cierra.
+fn cancel<W>(
+    running: &Running,
+    cancelled: &Mutex<HashSet<u64>>,
+    events: &Sender<Event>,
+    wake: &W,
+    id: u64,
+) where
+    W: Fn(),
+{
+    lock(cancelled).insert(id);
+    if let Some(mut child) = lock(running).remove(&id) {
+        let _ = child.kill();
+    }
+    let _ = events.send(Event::StateChanged {
+        id,
+        state: State::Cancelled,
+    });
+    wake();
+}
+
+/// Un candado envenenado no invalida el dato: los eventos son independientes
+/// entre si, asi que se sigue con lo que haya.
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn probe(url: &str) -> Result<Media, String> {
@@ -143,16 +283,9 @@ fn probe(url: &str) -> Result<Media, String> {
     })
 }
 
-fn download<W>(
-    id: u64,
-    url: &str,
-    options: &Options,
-    events: &Sender<Event>,
-    wake: &W,
-    running: &mut HashMap<u64, Child>,
-) where
-    W: Fn(),
-{
+/// Los argumentos de la descarga, en orden. Aparte de `run_job` para poder
+/// probarlos sin lanzar yt-dlp.
+fn download_args(url: &str, options: &Options) -> (Vec<String>, PathBuf) {
     let format = format_by_id(&options.format_id);
     let dir = options
         .output_dir
@@ -161,7 +294,7 @@ fn download<W>(
     let template = options
         .filename_template
         .clone()
-        .unwrap_or_else(|| "%(title).120s.%(ext)s".into());
+        .unwrap_or_else(|| crate::backend::DEFAULT_TEMPLATE.into());
 
     let mut args: Vec<String> = vec![
         "--newline".into(),
@@ -200,31 +333,58 @@ fn download<W>(
     }
     args.push(url.into());
 
-    let child = Proc::new(ytdlp_binary())
+    (args, dir)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_job<W>(
+    id: u64,
+    ytdlp: &Path,
+    url: &str,
+    options: &Options,
+    running: &Running,
+    cancelled: &Mutex<HashSet<u64>>,
+    events: &Sender<Event>,
+    wake: &W,
+    alive: &AtomicBool,
+) -> std::io::Result<()>
+where
+    W: Fn(),
+{
+    let (args, dir) = download_args(url, options);
+
+    let mut child = Proc::new(ytdlp)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(child) => child,
-        Err(error) => {
-            let _ = events.send(Event::StateChanged {
-                id,
-                state: State::Failed {
-                    reason: format!("no se pudo ejecutar yt-dlp: {error}"),
-                },
-            });
-            wake();
-            return;
-        }
-    };
+        .spawn()?;
 
     let stdout = child.stdout.take();
-    running.insert(id, child);
+    let stderr = child.stderr.take();
+    lock(running).insert(id, child);
+    // Ya hay un yt-dlp corriendo para este trabajo: ahora si.
+    let _ = events.send(Event::StateChanged {
+        id,
+        state: State::Downloading,
+    });
+    wake();
+
+    // Lo que yt-dlp escriba en stderr se junta en su propio hilo. Si nadie lo
+    // leyera, el buffer de la tuberia se llena y yt-dlp se queda esperando:
+    // las dos partes trabadas.
+    let collected = Arc::new(Mutex::new(String::new()));
+    let reader = {
+        let collected = Arc::clone(&collected);
+        stderr.map(|mut stderr| {
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                let _ = stderr.read_to_string(&mut text);
+                *lock(&collected) = text;
+            })
+        })
+    };
 
     let mut final_path: Option<String> = None;
-
     if let Some(stdout) = stdout {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if let Some(rest) = line.strip_prefix("PROGRESS|") {
@@ -244,39 +404,42 @@ fn download<W>(
         }
     }
 
-    let mut child = match running.remove(&id) {
-        Some(child) => child,
-        // Lo mato una cancelacion: el estado ya lo puso quien cancelo.
-        None => return,
-    };
+    // El candado se suelta antes de esperar: si esperara con el puesto, una
+    // cancelacion no podria ni entrar a matar el hijo.
+    let child = lock(running).remove(&id);
+    let status = child.map(|mut child| child.wait());
+    if let Some(reader) = reader {
+        let _ = reader.join();
+    }
 
-    let status = child.wait();
+    // La marca de cancelado es la fuente de verdad, y `cancel` la pone antes de
+    // matar el hijo. Asi, cuando este hilo mira, ya esta: nunca reporta un
+    // "listo" encima de un "cancelado". Durante el cierre, ademas, no hay a
+    // quien contarle nada.
+    if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
     let state = match status {
-        Ok(status) if status.success() => State::Done {
+        Some(Ok(status)) if status.success() => State::Done {
             path: final_path.unwrap_or_else(|| dir.display().to_string()),
         },
-        Ok(_) => {
-            let reason = child
-                .stderr
-                .take()
-                .map(|stderr| {
-                    let mut text = String::new();
-                    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                        text.push_str(&line);
-                        text.push('\n');
-                    }
-                    first_useful_line(&text)
-                })
-                .unwrap_or_else(|| "yt-dlp termino con error".into());
-            State::Failed { reason }
-        }
-        Err(error) => State::Failed {
+        Some(Ok(_)) => State::Failed {
+            reason: first_useful_line(&lock(&collected)),
+        },
+        Some(Err(error)) => State::Failed {
             reason: format!("no pude esperar a yt-dlp: {error}"),
+        },
+        // Sin hijo que esperar y sin marca de cancelado: no deberia pasar, pero
+        // mas vale decirlo que quedarse callado.
+        None => State::Failed {
+            reason: "la descarga se interrumpio".into(),
         },
     };
 
     let _ = events.send(Event::StateChanged { id, state });
     wake();
+    Ok(())
 }
 
 fn parse_progress(id: u64, rest: &str) -> Option<Event> {
@@ -309,6 +472,7 @@ fn first_useful_line(stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn lee_una_linea_de_progreso() {
@@ -350,5 +514,102 @@ mod tests {
             first_useful_line(stderr),
             "Requested format is not available"
         );
+    }
+
+    #[test]
+    fn sin_error_legible_devuelve_la_primera_linea() {
+        let stderr = "\nWARNING: algo raro\n";
+        assert_eq!(first_useful_line(stderr), "WARNING: algo raro");
+        assert_eq!(first_useful_line("   "), "yt-dlp fallo sin decir por que");
+    }
+
+    #[test]
+    fn la_descarga_lleva_la_carpeta_y_la_plantilla() {
+        let options = Options {
+            output_dir: Some(PathBuf::from("/tmp/reel-destino")),
+            filename_template: Some("%(id)s.%(ext)s".into()),
+            ..Options::default()
+        };
+        let (args, dir) = download_args("https://ejemplo.test/v", &options);
+
+        assert_eq!(dir, PathBuf::from("/tmp/reel-destino"));
+        assert!(args.iter().any(|arg| arg == "/tmp/reel-destino"));
+        assert!(args.iter().any(|arg| arg == "%(id)s.%(ext)s"));
+        // La url va ultima, que es como la espera yt-dlp.
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some("https://ejemplo.test/v")
+        );
+    }
+
+    /// El cupo no deja pasar a mas trabajos de los que permite, y devuelve el
+    /// lugar al soltarlo.
+    #[test]
+    fn el_cupo_limita_los_que_corren_a_la_vez() {
+        const HILOS: usize = 8;
+        const CUPO: usize = 3;
+
+        let cupos = Arc::new(Cupos::new(CUPO));
+        let dentro = Arc::new(AtomicUsize::new(0));
+        let maximo = Arc::new(AtomicUsize::new(0));
+        let soltados = Arc::new(AtomicUsize::new(0));
+
+        let mut hilos = Vec::new();
+        for _ in 0..HILOS {
+            let cupos = Arc::clone(&cupos);
+            let dentro = Arc::clone(&dentro);
+            let maximo = Arc::clone(&maximo);
+            let soltados = Arc::clone(&soltados);
+            hilos.push(std::thread::spawn(move || {
+                let cupo = cupos
+                    .tomar(Duration::from_secs(10))
+                    .expect("deberia haber lugar");
+                let ahora = dentro.fetch_add(1, Ordering::SeqCst) + 1;
+                maximo.fetch_max(ahora, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(30));
+                dentro.fetch_sub(1, Ordering::SeqCst);
+                drop(cupo);
+                soltados.fetch_add(1, Ordering::SeqCst);
+            }));
+        }
+        for hilo in hilos {
+            let _ = hilo.join();
+        }
+
+        assert_eq!(soltados.load(Ordering::SeqCst), HILOS);
+        assert!(
+            maximo.load(Ordering::SeqCst) <= CUPO,
+            "llegaron a correr {} a la vez con un cupo de {CUPO}",
+            maximo.load(Ordering::SeqCst)
+        );
+        assert_eq!(*lock(&cupos.libres), CUPO, "los cupos no volvieron todos");
+    }
+
+    /// Sin lugar en el tiempo pedido, se rinde en vez de esperar para siempre.
+    #[test]
+    fn el_cupo_se_rinde_si_espera_demasiado() {
+        let cupos = Cupos::new(1);
+        let _guardado = cupos.tomar(Duration::from_millis(50)).expect("el primero");
+        assert!(cupos.tomar(Duration::from_millis(50)).is_none());
+        drop(_guardado);
+        assert!(cupos.tomar(Duration::from_millis(50)).is_some());
+    }
+
+    /// El formato de audio ya trae sus propios `--embed-*`, asi que la casilla
+    /// de metadatos no tiene que repetirlos: dos veces el mismo flag es ruido.
+    #[test]
+    fn los_flags_de_embed_no_se_repiten() {
+        for format_id in ["mp3", "opus"] {
+            let options = Options {
+                format_id: format_id.into(),
+                metadata: true,
+                ..Options::default()
+            };
+            let (args, _) = download_args("https://ejemplo.test/v", &options);
+            for flag in ["--embed-metadata", "--embed-thumbnail"] {
+                let count = args.iter().filter(|arg| *arg == flag).count();
+                assert!(count <= 1, "{flag} aparece {count} veces en {format_id}");
+            }
+        }
     }
 }

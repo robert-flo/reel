@@ -68,6 +68,8 @@ pub const FORMATS: &[Format] = &[
         id: "mp3",
         label: "mp3",
         kind: Kind::Audio,
+        // Metadatos y caratula no van aca: los agrega la opcion "metadatos",
+        // que esta encendida por defecto, y repetir el flag es ruido.
         args: &[
             "-f",
             "ba/b",
@@ -76,25 +78,20 @@ pub const FORMATS: &[Format] = &[
             "mp3",
             "--audio-quality",
             "0",
-            // El issue 12 de yoinks, resuelto de entrada.
-            "--embed-metadata",
-            "--embed-thumbnail",
         ],
     },
     Format {
         id: "opus",
         label: "opus",
         kind: Kind::Audio,
-        args: &[
-            "-f",
-            "ba/b",
-            "-x",
-            "--audio-format",
-            "opus",
-            "--embed-metadata",
-        ],
+        args: &["-f", "ba/b", "-x", "--audio-format", "opus"],
     },
 ];
+
+/// La plantilla de nombre que usa la app cuando no se le dice otra. Vive aca y
+/// no en los ajustes para que el worker no dependa de ellos: es el default de
+/// yt-dlp con el titulo recortado.
+pub const DEFAULT_TEMPLATE: &str = "%(title).120s.%(ext)s";
 
 pub fn format_by_id(id: &str) -> &'static Format {
     FORMATS.iter().find(|f| f.id == id).unwrap_or(&FORMATS[0])
@@ -316,7 +313,7 @@ pub struct Backend {
 impl Backend {
     pub fn spawn<W>(wake: W) -> Self
     where
-        W: Fn() + Send + 'static,
+        W: Fn() + Send + Sync + 'static,
     {
         let (commands, command_rx) = std::sync::mpsc::channel::<Command>();
         let (event_tx, events) = std::sync::mpsc::channel::<Event>();

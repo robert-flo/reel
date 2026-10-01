@@ -27,7 +27,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             .corner_radius(CornerRadius::same(Metrics::RADIUS))
             .inner_margin(egui::Margin::symmetric(18, 14))
             .show(ui, |ui| {
-                ui.label(text("no pude leer ese enlace", 13.0, Weight::Medium, palette.danger));
+                ui.label(text(
+                    "no pude leer ese enlace",
+                    13.0,
+                    Weight::Medium,
+                    palette.danger,
+                ));
                 ui.add_space(4.0);
                 ui.label(caption(reason, &palette));
             });
@@ -52,41 +57,40 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // El boton se reserva su ancho antes que el titulo, para que
                 // un titulo largo lo recorte a el y no al reves.
                 let button_width = 148.0;
-                let text_width =
-                    (ui.available_width() - button_width - 16.0).max(180.0);
+                let text_width = (ui.available_width() - button_width - 16.0).max(180.0);
 
                 ui.allocate_ui_with_layout(
                     Vec2::new(text_width, Metrics::CARD - 28.0),
                     Layout::top_down(Align::Min),
                     |ui| {
-                    ui.add_space(4.0);
-                    ui.add(
-                        egui::Label::new(text(
-                            &preview.title,
-                            16.0,
-                            Weight::SemiBold,
-                            palette.text,
-                        ))
-                        .truncate(),
-                    );
-                    ui.add_space(6.0);
+                        ui.add_space(4.0);
+                        ui.add(
+                            egui::Label::new(text(
+                                &preview.title,
+                                16.0,
+                                Weight::SemiBold,
+                                palette.text,
+                            ))
+                            .truncate(),
+                        );
+                        ui.add_space(6.0);
 
-                    let mut meta = Vec::new();
-                    if !preview.uploader.is_empty() {
-                        meta.push(preview.uploader.clone());
-                    }
-                    if let Some(duration) = preview.duration {
-                        meta.push(human_duration(duration));
-                    }
-                    if !preview.host.is_empty() {
-                        meta.push(preview.host.clone());
-                    }
-                    ui.label(caption(meta.join("  ·  "), &palette));
+                        let mut meta = Vec::new();
+                        if !preview.uploader.is_empty() {
+                            meta.push(preview.uploader.clone());
+                        }
+                        if let Some(duration) = preview.duration {
+                            meta.push(human_duration(duration));
+                        }
+                        if !preview.host.is_empty() {
+                            meta.push(preview.host.clone());
+                        }
+                        ui.label(caption(meta.join("  ·  "), &palette));
 
-                    ui.add_space(12.0);
-                    formats(app, ui);
-                    ui.add_space(10.0);
-                    extras(app, ui);
+                        ui.add_space(12.0);
+                        formats(app, ui);
+                        ui.add_space(10.0);
+                        extras(app, ui);
                     },
                 );
 
@@ -105,10 +109,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .stroke(Stroke::NONE)
                         .corner_radius(CornerRadius::same(8)),
                     );
-                    if go
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
+                    if go.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         app.enqueue_preview();
                     }
                 });
@@ -233,7 +234,11 @@ fn toggle(
     }
     *first = false;
 
-    let color = if *value { palette.secondary } else { palette.dim };
+    let color = if *value {
+        palette.secondary
+    } else {
+        palette.dim
+    };
     let response = ui
         .add(egui::Label::new(text(label, 11.0, Weight::Medium, color)).sense(Sense::click()))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
