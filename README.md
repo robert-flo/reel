@@ -91,10 +91,14 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
 
   Un detalle que conviene saber: yt-dlp **no vuelve a bajar** un archivo que ya
   esta en la carpeta de salida, ni siquiera al reintentar. Para el caso normal
-  esta bien, porque reintentar termina rapido y la fila queda en `listo`. Pero
-  si el archivo quedo truncado o corrupto —un postprocesado que fallo a
-  medias—, el reintento no lo arregla: hay que borrarlo a mano y volver a
-  pedirlo.
+  esta bien, porque reintentar termina rapido y la fila queda en `listo`.
+- **Volver a bajar** aparece en los trabajos ya listos y los baja **de cero**,
+  aunque el archivo este. Es la salida para un archivo que quedo truncado o
+  corrupto —un postprocesado que fallo a medias, por ejemplo—, donde reintentar
+  no alcanza porque yt-dlp saltearia el archivo y volveria a decir `listo`
+  sobre el mismo archivo roto. Se pide a proposito y no se arrastra: el
+  reintento siguiente vuelve a ser normal, porque bajar de cero algo que ya
+  esta bien seria tirar ancho de banda.
 - **Abrir carpeta** abre donde quedo el archivo.
 
 ### Cuantos a la vez

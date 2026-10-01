@@ -661,6 +661,23 @@ impl App {
         true
     }
 
+    /// Vuelve a bajar un trabajo de cero, aunque el archivo ya este. La salida
+    /// para un archivo que quedo truncado: `retry` lo saltearia y diria "listo"
+    /// sobre el mismo archivo roto.
+    pub fn retry_forzado(&mut self, id: u64) {
+        let pedido = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.retry_forzado(id)
+        };
+        if let Some((url, options)) = pedido {
+            self.backend.send(Command::Start { id, url, options });
+        }
+    }
+
     /// Reintenta todo lo que no este andando. Sirve cuando se cae la red y
     /// fallan varios de una: no hay que ir uno por uno.
     pub fn retry_failed(&mut self) -> usize {

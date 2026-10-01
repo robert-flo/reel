@@ -112,6 +112,14 @@ pub struct Options {
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
+    /// Volver a bajar aunque el archivo ya este en la carpeta.
+    ///
+    /// yt-dlp saltea un archivo que existe, tambien al reintentar, asi que un
+    /// archivo truncado —un postprocesado que fallo a medias— no se arregla
+    /// reintentando. Esto es la salida para ese caso, y por eso es una accion
+    /// aparte y no lo que hace `reintentar`: bajar de cero algo que ya esta
+    /// bien seria tirar ancho de banda.
+    pub force: bool,
 }
 
 impl Default for Options {
@@ -125,6 +133,7 @@ impl Default for Options {
             output_dir: None,
             filename_template: None,
             playlist: false,
+            force: false,
         }
     }
 }
@@ -288,6 +297,32 @@ mod queue_tests {
         // La url, el formato y la carpeta son los mismos: eso es lo que hace
         // que yt-dlp reanude el `.part` en vez de empezar de cero.
         assert_eq!(job.url, url);
+    }
+
+    /// Volver a bajar es a proposito y no se arrastra: despues de pedirlo una
+    /// vez, un reintento normal ya no fuerza nada. Si no, cada reintento
+    /// bajaria de cero algo que ya esta.
+    #[test]
+    fn volver_a_bajar_no_se_arrastra() {
+        let mut queue = Queue::default();
+        let id = job_terminado(
+            &mut queue,
+            State::Done {
+                path: "/tmp/roto.mp4".into(),
+            },
+        );
+
+        let (_, options) = queue.retry_forzado(id).expect("deberia poder");
+        assert!(options.force, "la primera vez baja de cero");
+
+        // Termino el intento forzado, como pasaria de verdad.
+        queue.get_mut(id).expect("sigue").state = State::Done {
+            path: "/tmp/roto.mp4".into(),
+        };
+
+        // El segundo intento vuelve a ser normal: la bandera no quedo pegada.
+        let (_, options) = queue.retry(id).expect("deberia poder");
+        assert!(!options.force, "el reintento normal no baja de cero");
     }
 
     #[test]
@@ -1390,6 +1425,19 @@ impl Queue {
         // Se devuelven para que la app les mande la orden de arrancar: el
         // worker no sabe de la cola, solo de procesos.
         self.recien_encolados = ids;
+    }
+
+    /// Como `retry`, pero pidiendo que se baje de nuevo aunque el archivo ya
+    /// este. Es la salida cuando el que quedo esta truncado: `retry` lo
+    /// saltearia y volveria a decir "listo" sobre el mismo archivo roto.
+    ///
+    /// La bandera va solo en lo que se devuelve para este intento, no en el
+    /// trabajo: si quedara guardada, el reintento siguiente tambien bajaria de
+    /// cero sin que nadie lo pida.
+    pub fn retry_forzado(&mut self, id: u64) -> Option<(String, Options)> {
+        let (url, mut options) = self.retry(id)?;
+        options.force = true;
+        Some((url, options))
     }
 
     /// Devuelve un trabajo terminado a la cola para volver a bajarlo.

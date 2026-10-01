@@ -495,6 +495,12 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         "after_move:DONE|%(filepath)s".into(),
     ];
 
+    // Bajar de nuevo aunque el archivo exista. Solo cuando se pidio: es la
+    // recuperacion de un archivo truncado, no lo que hace un reintento normal.
+    if options.force {
+        args.push("--force-overwrites".into());
+    }
+
     for arg in format.args {
         args.push((*arg).into());
     }
@@ -1074,6 +1080,24 @@ mod tests {
         let options = Options::default();
         let (args, _) = download_args("https://ejemplo.test/v", &options);
         assert!(!args.iter().any(|arg| arg == "--no-overwrites"));
+    }
+
+    /// Bajar de cero es una salida explicita, no lo que pasa siempre: pedirla
+    /// fuerza la bandera, y sin pedirla no aparece.
+    #[test]
+    fn solo_baja_de_cero_cuando_se_pide() {
+        let normal = Options::default();
+        let (args, _) = download_args("https://ejemplo.test/v", &normal);
+        assert!(!args.iter().any(|arg| arg == "--force-overwrites"));
+
+        let forzado = Options {
+            force: true,
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &forzado);
+        assert!(args.iter().any(|arg| arg == "--force-overwrites"));
+        // Y sigue pudiendo reanudar lo que quedo a medias.
+        assert!(args.iter().any(|arg| arg == "--continue"));
     }
 
     #[test]

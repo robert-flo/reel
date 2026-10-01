@@ -69,13 +69,22 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let mut cancel: Option<u64> = None;
     let mut retry: Option<u64> = None;
+    let mut retry_forzado: Option<u64> = None;
     let mut abrir: Option<String> = None;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for job in &jobs {
-                row(ui, app, job, &mut cancel, &mut retry, &mut abrir);
+                row(
+                    ui,
+                    app,
+                    job,
+                    &mut cancel,
+                    &mut retry,
+                    &mut retry_forzado,
+                    &mut abrir,
+                );
                 ui.add_space(Metrics::GAP);
             }
         });
@@ -88,6 +97,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(id) = retry {
         app.retry(id);
+    }
+    if let Some(id) = retry_forzado {
+        app.retry_forzado(id);
     }
     if let Some(path) = abrir {
         revelar(&path);
@@ -115,6 +127,7 @@ fn row(
     job: &crate::backend::Job,
     cancel: &mut Option<u64>,
     retry: &mut Option<u64>,
+    retry_forzado: &mut Option<u64>,
     abrir: &mut Option<String>,
 ) {
     let palette = app.palette;
@@ -220,6 +233,26 @@ fn row(
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
                                     *retry = Some(job.id);
+                                }
+                                ui.add_space(10.0);
+                            }
+                            // Un archivo que ya esta no se vuelve a bajar al
+                            // reintentar, asi que si el que quedo esta roto
+                            // hay que pedirlo de cero aparte.
+                            if matches!(job.state, State::Done { .. }) && !job.options.force {
+                                let hit = ui
+                                    .add(
+                                        egui::Label::new(text(
+                                            "volver a bajar",
+                                            11.0,
+                                            Weight::Regular,
+                                            palette.dim,
+                                        ))
+                                        .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit.clicked() {
+                                    *retry_forzado = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }
