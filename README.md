@@ -124,6 +124,9 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Descarga de fragmentos y recorte por tiempo (`--download-sections`)**: opción `recortar` en la
   ficha para especificar tiempo de inicio y fin (ej. `01:30` a `03:45`) y descargar únicamente el
   fragmento deseado del video o audio, con precisión de corte mediante `--force-keyframes-at-cuts`.
+- **Inhibición de suspensión durante descargas activas**: prevención automática de reposo del
+  sistema mediante `systemd-inhibit` mientras haya descargas activas en curso, configurable en
+  los ajustes para evitar que la máquina se duerma a mitad de una descarga grande.
 
 ### Falta
 

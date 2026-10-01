@@ -46,6 +46,9 @@ pub struct Settings {
     /// Argumentos adicionales pasados directamente a yt-dlp (ej: "--proxy ...").
     #[serde(default)]
     pub extra_args: String,
+    /// Evitar suspension del sistema durante descargas activas (systemd-inhibit).
+    #[serde(default = "default_true")]
+    pub inhibit_sleep: bool,
     /// Archivo de paleta elegido. `None` es seguir el tema del escritorio.
     pub theme: Option<String>,
     /// Idioma de la interfaz. Vacio o desconocido es ingles.
@@ -66,6 +69,7 @@ impl Default for Settings {
             chapters: true,
             metadata: true,
             extra_args: String::new(),
+            inhibit_sleep: true,
             theme: None,
             language: Language::default(),
         }
@@ -403,17 +407,20 @@ mod tests {
         let settings = Settings::default();
         assert!(settings.chapters);
         assert!(settings.metadata);
+        assert!(settings.inhibit_sleep);
         assert_eq!(settings.extra_args, "");
 
         let vacio: Settings = serde_json::from_str("{}").expect("default");
         assert!(vacio.chapters);
         assert!(vacio.metadata);
+        assert!(vacio.inhibit_sleep);
         assert_eq!(vacio.extra_args, "");
 
-        let json = r#"{"chapters": false, "metadata": false, "extra_args": "--geo-bypass"}"#;
+        let json = r#"{"chapters": false, "metadata": false, "inhibit_sleep": false, "extra_args": "--geo-bypass"}"#;
         let loaded: Settings = serde_json::from_str(json).expect("deserializar");
         assert!(!loaded.chapters);
         assert!(!loaded.metadata);
+        assert!(!loaded.inhibit_sleep);
         assert_eq!(loaded.extra_args, "--geo-bypass");
     }
 }

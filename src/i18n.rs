@@ -174,6 +174,8 @@ i18n_strings! {
     chapters_hint: { en: "adds chapter markers to video files when available", es: "agrega marcas de capítulos en el video si están disponibles" }
     metadata_toggle: { en: "embed metadata & cover", es: "incrustar metadatos y carátula" }
     metadata_hint: { en: "adds tags, description, and cover art to the file", es: "agrega etiquetas, descripción y carátula al archivo" }
+    inhibit_sleep_toggle: { en: "prevent sleep while downloading", es: "evitar suspensión al descargar" }
+    inhibit_sleep_hint: { en: "keeps the computer awake so active downloads are not interrupted", es: "mantiene el equipo despierto para no interrumpir descargas activas" }
     section_advanced: { en: "ADVANCED", es: "AVANZADO" }
     extra_args_hint: { en: "additional arguments passed to yt-dlp (e.g. --proxy socks5://...)", es: "argumentos adicionales pasados a yt-dlp (ej.: --proxy socks5://...)" }
     section_subtitles: { en: "SUBTITLES", es: "SUBTÍTULOS" }

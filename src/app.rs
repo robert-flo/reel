@@ -131,6 +131,7 @@ pub struct App {
 
     pub tray: Option<fastframe_tray::Tray>,
     pub default_browser: String,
+    pub inhibitor: SleepInhibitor,
 
     // Lo que fastframe-shell necesita saber.
     hide_intent: bool,
@@ -218,6 +219,7 @@ impl App {
             update_tx,
             tray,
             default_browser,
+            inhibitor: SleepInhibitor::new(),
             hide_intent: false,
             wants_show: false,
             quit_requested: false,
@@ -607,6 +609,9 @@ impl App {
                 .count();
             (activos, hechos, fallados)
         };
+
+        self.inhibitor
+            .set_active(self.settings.inhibit_sleep && activos > 0);
 
         let antes = std::mem::replace(&mut self.activos_antes, activos);
         if activos > 0 || antes == 0 {
@@ -1064,6 +1069,55 @@ impl App {
 
     pub fn hides_to_tray(&self) -> bool {
         self.tray.is_some()
+    }
+}
+
+/// Mantiene un proceso `systemd-inhibit` activo mientras haya descargas en curso
+/// para evitar que el equipo se suspenda por inactividad.
+#[derive(Default)]
+pub struct SleepInhibitor {
+    child: Option<std::process::Child>,
+}
+
+impl SleepInhibitor {
+    pub fn new() -> Self {
+        Self { child: None }
+    }
+
+    pub fn set_active(&mut self, active: bool) {
+        if active && self.child.is_none() {
+            if let Ok(child) = std::process::Command::new("systemd-inhibit")
+                .args([
+                    "--what=sleep:idle",
+                    "--who=reel",
+                    "--why=Downloading media",
+                    "sleep",
+                    "infinity",
+                ])
+                .spawn()
+            {
+                self.child = Some(child);
+            }
+        } else if !active && self.child.is_some() {
+            if let Some(mut child) = self.child.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn is_active(&self) -> bool {
+        self.child.is_some()
+    }
+}
+
+impl Drop for SleepInhibitor {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -1734,5 +1788,14 @@ mod tests {
             queue.jobs[0].options.download_sections.as_deref(),
             Some("*01:30-03:45")
         );
+    }
+
+    #[test]
+    fn inhibidor_de_suspension_se_activa_y_desactiva() {
+        let mut inhibitor = super::SleepInhibitor::new();
+        assert!(!inhibitor.is_active());
+        // set_active false no hace nada si ya esta apagado
+        inhibitor.set_active(false);
+        assert!(!inhibitor.is_active());
     }
 }

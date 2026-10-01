@@ -85,6 +85,7 @@ fn commit(app: &mut App) {
         || app.settings.sponsorblock != app.draft.sponsorblock
         || app.settings.chapters != app.draft.chapters
         || app.settings.metadata != app.draft.metadata
+        || app.settings.inhibit_sleep != app.draft.inhibit_sleep
         || app.settings.extra_args != app.draft.extra_args
         || app.settings.subtitle_list() != app.draft_subtitles;
     if changed {
@@ -94,6 +95,7 @@ fn commit(app: &mut App) {
         app.settings.sponsorblock = app.draft.sponsorblock;
         app.settings.chapters = app.draft.chapters;
         app.settings.metadata = app.draft.metadata;
+        app.settings.inhibit_sleep = app.draft.inhibit_sleep;
         app.settings.extra_args = app.draft.extra_args.clone();
         app.settings.set_subtitles(&app.draft_subtitles.clone());
         app.settings_changed();
@@ -449,6 +451,15 @@ fn extras_setting(ui: &mut egui::Ui, app: &mut App, palette: &crate::palette::Pa
             .clicked()
         {
             app.draft.metadata = !meta_activo;
+            commit(app);
+        }
+
+        let inh_activo = app.draft.inhibit_sleep;
+        if chip(ui, tr.inhibit_sleep_toggle, inh_activo, palette)
+            .on_hover_text(tr.inhibit_sleep_hint)
+            .clicked()
+        {
+            app.draft.inhibit_sleep = !inh_activo;
             commit(app);
         }
     });
