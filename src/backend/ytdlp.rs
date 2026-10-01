@@ -190,6 +190,14 @@ where
             Command::Cancel { id } => {
                 cancel(&running, &cancelled, &events, &*wake, id);
             }
+            Command::Expandir { id, url } => {
+                let (videos, error) = match entradas_de_lista(&url) {
+                    Ok(videos) => (videos, None),
+                    Err(reason) => (Vec::new(), Some(reason)),
+                };
+                let _ = events.send(Event::PlaylistExpandida { id, videos, error });
+                wake();
+            }
             Command::Preview { url } => {
                 match probe(&url) {
                     Ok(media) => {
@@ -348,6 +356,8 @@ fn media_from_json(json: &serde_json::Value) -> Media {
         host: json["extractor_key"].as_str().unwrap_or("").to_lowercase(),
         thumbnail_url,
         playlist_count,
+        // Vacia: la url del trabajo ya es esta.
+        url: String::new(),
     }
 }
 
@@ -368,6 +378,80 @@ pub(crate) fn probe(url: &str) -> Result<Media, String> {
         .map_err(|error| format!("yt-dlp devolvio algo que no pude leer: {error}"))?;
 
     Ok(media_from_json(&json))
+}
+
+/// Los videos que trae una lista, sin bajar nada: `--flat-playlist` pide solo
+/// el listado, que es rapido y no trae los formatos.
+///
+/// Devuelve una `Media` por video, que es lo que necesita una fila de la cola.
+/// La url de la lista se cambia por la de cada video, que es lo que hay que
+/// pasarle despues a la descarga.
+pub(crate) fn entradas_de_lista(url: &str) -> Result<Vec<Media>, String> {
+    let output = Proc::new(ytdlp_binary())
+        .args([
+            "-J",
+            "--flat-playlist",
+            "--no-warnings",
+            "--ignore-errors",
+            url,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("no se pudo ejecutar yt-dlp: {error}"))?;
+
+    // Con `--ignore-errors` yt-dlp puede salir con error y aun asi traer
+    // entradas; solo se falla si no hay ninguna que leer.
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        if output.status.success() {
+            format!("yt-dlp devolvio algo que no pude leer: {error}")
+        } else {
+            first_useful_line(&String::from_utf8_lossy(&output.stderr))
+        }
+    })?;
+
+    let entradas = json["entries"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if entradas.is_empty() {
+        return Err("la lista no trajo ningun video".into());
+    }
+
+    Ok(entradas.iter().filter_map(entrada_de_lista).collect())
+}
+
+/// Una entrada de `--flat-playlist` como `Media`. Los campos cambian de nombre
+/// respecto de un video suelto: no hay `extractor_key` (viene `ie_key`), la
+/// miniatura esta en `thumbnails`, y la url del video es `url`.
+fn entrada_de_lista(json: &serde_json::Value) -> Option<Media> {
+    let url = json["url"]
+        .as_str()
+        .or_else(|| json["webpage_url"].as_str())?;
+    if url.is_empty() {
+        return None;
+    }
+
+    Some(Media {
+        title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
+        uploader: json["uploader"]
+            .as_str()
+            .or_else(|| json["channel"].as_str())
+            .unwrap_or("")
+            .to_string(),
+        duration: json["duration"].as_f64(),
+        host: json["ie_key"]
+            .as_str()
+            .or_else(|| json["extractor_key"].as_str())
+            .unwrap_or("")
+            .to_lowercase(),
+        thumbnail_url: json["thumbnails"][0]["url"]
+            .as_str()
+            .or_else(|| json["thumbnail"].as_str())
+            .map(str::to_string),
+        playlist_count: None,
+        url: url.to_string(),
+    })
 }
 
 /// Los argumentos de la descarga, en orden. Aparte de `run_job` para poder
@@ -882,6 +966,42 @@ mod tests {
             media.thumbnail_url.as_deref(),
             Some("https://ejemplo.test/primera.jpg")
         );
+    }
+
+    /// Una entrada de `--flat-playlist` usa otros nombres de campo que un video
+    /// suelto: `ie_key` en vez de `extractor_key`, `thumbnails` en vez de
+    /// `thumbnail`, y trae la url del video en `url`.
+    #[test]
+    fn lee_una_entrada_de_lista() {
+        let json = serde_json::json!({
+            "title": "Un video de la lista",
+            "url": "https://www.youtube.com/watch?v=abc123",
+            "duration": 969,
+            "uploader": "alguien",
+            "ie_key": "Youtube",
+            "thumbnails": [{ "url": "https://ejemplo.test/mini.jpg" }]
+        });
+        let media = entrada_de_lista(&json).expect("deberia leerla");
+        assert_eq!(media.url, "https://www.youtube.com/watch?v=abc123");
+        assert_eq!(media.title, "Un video de la lista");
+        assert_eq!(media.duration, Some(969.0));
+        assert_eq!(media.host, "youtube");
+        assert_eq!(
+            media.thumbnail_url.as_deref(),
+            Some("https://ejemplo.test/mini.jpg")
+        );
+        assert_eq!(media.playlist_count, None);
+    }
+
+    /// Sin url no hay nada que bajar, asi que la entrada se descarta en vez de
+    /// crear una fila que no puede funcionar.
+    #[test]
+    fn descarta_una_entrada_sin_url() {
+        let json = serde_json::json!({ "title": "sin url" });
+        assert!(entrada_de_lista(&json).is_none());
+
+        let vacia = serde_json::json!({ "title": "url vacia", "url": "" });
+        assert!(entrada_de_lista(&vacia).is_none());
     }
 
     /// Cancelar deja el `.part` en la carpeta y el reintento vuelve a pedir la

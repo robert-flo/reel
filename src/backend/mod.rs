@@ -109,6 +109,9 @@ pub struct Options {
     pub cookies_from_browser: Option<String>,
     pub output_dir: Option<std::path::PathBuf>,
     pub filename_template: Option<String>,
+    /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
+    /// expande a una fila por video. La fila de la lista queda como resumen.
+    pub playlist: bool,
 }
 
 impl Default for Options {
@@ -121,6 +124,7 @@ impl Default for Options {
             cookies_from_browser: None,
             output_dir: None,
             filename_template: None,
+            playlist: false,
         }
     }
 }
@@ -136,6 +140,9 @@ pub struct Media {
     /// para un video suelto. Sirve para avisar antes de encolar, porque
     /// `--no-playlist` no frena una url de playlist: la baja entera.
     pub playlist_count: Option<u64>,
+    /// La url de este video. Vacia cuando es la misma que la del trabajo (un
+    /// video suelto); con algo, cuando viene de una lista y es otra.
+    pub url: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -198,6 +205,13 @@ pub enum Command {
         url: String,
         options: Options,
     },
+    /// Expande una lista a una fila por video. Se pide despues de encolarla,
+    /// asi que la fila de la lista ya existe y se le puede aplicar el
+    /// resultado.
+    Expandir {
+        id: u64,
+        url: String,
+    },
     Cancel {
         id: u64,
     },
@@ -213,6 +227,13 @@ pub enum Event {
     },
     PreviewFailed {
         reason: String,
+    },
+    /// Los videos que traia una lista, ya en filas. La lista se encola como
+    /// resumen y cada entrada es un trabajo propio, con su progreso.
+    PlaylistExpandida {
+        id: u64,
+        videos: Vec<Media>,
+        error: Option<String>,
     },
     Progress {
         id: u64,
@@ -320,6 +341,9 @@ pub mod selfcheck {
         let path = dir.join("yt-dlp-falso.sh");
         let guion = r#"#!/usr/bin/env bash
 # Uso: yt-dlp-falso.sh -P CARPETA -o PLANTILLA URL...
+# Los argumentos se guardan antes del bucle: el `while` hace `shift` y los
+# consume, asi que despues `$*` queda vacio y ningun `case` matchearia.
+argumentos="$*"
 carpeta="."
 url=""
 fallar=0
@@ -339,6 +363,23 @@ case "$url" in
   *v3) segundos=0.8 ;;
   *lento) segundos=6.0 ;;
   *) segundos=1.0 ;;
+esac
+
+# `--flat-playlist` pide solo el listado, no una descarga: se contesta con dos
+# videos de mentira, con urls que el mismo guion sabe atender.
+case " $argumentos " in
+  *" --flat-playlist "*)
+    cat <<JSON
+{"_type":"playlist","title":"Una lista","playlist_count":2,"entries":[
+ {"title":"Primer video","url":"https://ejemplo.test/v1","duration":120,
+  "uploader":"alguien","ie_key":"Youtube",
+  "thumbnails":[{"url":"https://ejemplo.test/uno.jpg"}]},
+ {"title":"Segundo video","url":"https://ejemplo.test/v2","duration":240,
+  "uploader":"otro","ie_key":"Youtube",
+  "thumbnails":[{"url":"https://ejemplo.test/dos.jpg"}]}]}
+JSON
+    exit 0
+    ;;
 esac
 
 echo "$url|$segundos|$(date +%s.%N)" >> "$carpeta/arranque.txt"
@@ -1156,6 +1197,90 @@ echo "DONE|$final"
         println!("OK reintento");
     }
 
+    /// Una lista se expande a una fila por video: la fila de la lista queda
+    /// como resumen y cada video baja por su cuenta, con su progreso y su
+    /// cancelacion.
+    fn comprobar_expansion(salida: &Path) {
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        std::env::set_var("REEL_YTDLP", &guion);
+        let backend = Backend::spawn(|| {});
+
+        // La lista entra como un trabajo mas, marcado como lista.
+        let mut options = Options {
+            output_dir: Some(salida.to_path_buf()),
+            ..Options::default()
+        };
+        options.playlist = true;
+        let id = {
+            let mut queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue.push_ready(
+                "https://ejemplo.test/lista".into(),
+                options,
+                Media {
+                    title: "Una lista".into(),
+                    playlist_count: Some(2),
+                    ..Media::default()
+                },
+            )
+        };
+        backend.send(Command::Expandir {
+            id,
+            url: "https://ejemplo.test/lista".into(),
+        });
+
+        // La fila de la lista tiene que quedar como resumen y aparecer las dos
+        // filas de video.
+        let limite = Instant::now() + Duration::from_secs(20);
+        let mut expandida = false;
+        while Instant::now() < limite && !expandida {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            expandida = queue.jobs.len() == 3
+                && queue
+                    .jobs
+                    .iter()
+                    .find(|job| job.id == id)
+                    .is_some_and(|job| matches!(job.state, State::Done { .. }));
+        }
+        assert!(expandida, "la lista no se expandio a una fila por video");
+
+        // Las filas nuevas tienen que poder bajar: se les manda la orden, que
+        // es lo que hace la app cuando `drain` se las devuelve.
+        let nuevos: Vec<(u64, String, Options)> = {
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue
+                .jobs
+                .iter()
+                .filter(|job| job.id != id)
+                .map(|job| (job.id, job.url.clone(), job.options.clone()))
+                .collect()
+        };
+        assert_eq!(nuevos.len(), 2, "deberian ser dos videos: {nuevos:?}");
+        for (_, _, options) in &nuevos {
+            assert!(!options.playlist, "un video de la lista no es una lista");
+        }
+        for (id, url, options) in nuevos {
+            backend.send(Command::Start { id, url, options });
+        }
+
+        let limite = Instant::now() + Duration::from_secs(30);
+        let mut finales = 0;
+        while Instant::now() < limite && finales < 2 {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            finales = queue
+                .jobs
+                .iter()
+                .filter(|job| job.id != id && matches!(job.state, State::Done { .. }))
+                .count();
+        }
+        backend.send(Command::Shutdown);
+
+        println!("filas={finales} de 2 terminadas");
+        assert_eq!(finales, 2, "los videos de la lista no terminaron de bajar");
+        println!("OK expansion");
+    }
+
     /// Corre en un proceso propio: prepara un directorio, elige la prueba y
     /// devuelve el codigo de salida. Cero significa que paso.
     pub fn run(modo: &str) -> i32 {
@@ -1172,6 +1297,7 @@ echo "DONE|$final"
             "limite" => comprobar_limite(&salida),
             "carrera" => comprobar_carrera_entre_terminar_y_cancelar(&salida),
             "reintento" => comprobar_reintento(&salida),
+            "expansion" => comprobar_expansion(&salida),
             "descarga-real" => comprobar_descarga_real(&salida),
             otro => panic!("prueba desconocida: {otro}"),
         });
@@ -1193,6 +1319,9 @@ pub struct Queue {
     /// Lo ultimo que se leyo de un enlace, para la ficha de arriba.
     pub preview: Option<(String, Media)>,
     pub preview_error: Option<String>,
+    /// Los trabajos que acaba de crear una lista, para que la app les mande la
+    /// orden de arrancar. Se vacia al leerlo.
+    pub recien_encolados: Vec<u64>,
     next_id: u64,
 }
 
@@ -1216,6 +1345,51 @@ impl Queue {
 
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Job> {
         self.jobs.iter_mut().find(|j| j.id == id)
+    }
+
+    /// Mete los videos de una lista como trabajos propios, cada uno con las
+    /// mismas opciones que la lista pero sin la marca de lista (si no, cada
+    /// video intentaria expandirse otra vez).
+    ///
+    /// La fila de la lista queda como resumen: dice cuantos videos son y que ya
+    /// estan abajo, en vez de bajar la lista entera como un solo trabajo.
+    fn expandir_lista(&mut self, id: u64, videos: Vec<Media>, error: Option<String>) {
+        if let Some(reason) = error {
+            if let Some(job) = self.get_mut(id) {
+                job.state = State::Failed {
+                    reason: format!("no pude leer la lista: {reason}"),
+                };
+            }
+            return;
+        }
+
+        let Some(job) = self.get_mut(id) else {
+            return;
+        };
+        let mut options = job.options.clone();
+        // Sin esto cada video intentaria expandir su propia lista.
+        options.playlist = false;
+
+        let mut ids = Vec::new();
+        for video in videos {
+            let url = video.url.clone();
+            if url.is_empty() {
+                continue;
+            }
+            ids.push(self.push_ready(url, options.clone(), video));
+        }
+
+        let cuantos = ids.len();
+        if let Some(job) = self.get_mut(id) {
+            job.progress = 1.0;
+            job.state = State::Done {
+                path: format!("{cuantos} videos abajo"),
+            };
+        }
+
+        // Se devuelven para que la app les mande la orden de arrancar: el
+        // worker no sabe de la cola, solo de procesos.
+        self.recien_encolados = ids;
     }
 
     /// Devuelve un trabajo terminado a la cola para volver a bajarlo.
@@ -1285,6 +1459,11 @@ impl Queue {
                     job.eta_secs = eta_secs;
                 }
             }
+            Event::PlaylistExpandida { id, videos, error } => {
+                // La fila de la lista queda como resumen y cada video es un
+                // trabajo propio, con su progreso y su cancelacion.
+                self.expandir_lista(id, videos, error);
+            }
             Event::StateChanged { id, state } => {
                 if let Some(job) = self.get_mut(id) {
                     if matches!(state, State::Done { .. }) {
@@ -1336,9 +1515,11 @@ impl Backend {
         }
     }
 
-    /// Vacia el canal de eventos sobre la cola. Devuelve true si algo cambio,
-    /// para que el frame solo se repinte cuando hace falta.
-    pub fn drain(&self) -> bool {
+    /// Vacia el canal de eventos sobre la cola.
+    /// Vacia el canal de eventos. Devuelve los trabajos que creo una lista,
+    /// que son los unicos que necesitan que alguien les mande la orden de
+    /// arrancar: el worker no conoce la cola, solo procesos.
+    pub fn drain(&self) -> (bool, Vec<u64>) {
         let mut changed = false;
         let mut queue = match self.queue.lock() {
             Ok(queue) => queue,
@@ -1348,6 +1529,6 @@ impl Backend {
             queue.apply(event);
             changed = true;
         }
-        changed
+        (changed, std::mem::take(&mut queue.recien_encolados))
     }
 }

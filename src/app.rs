@@ -341,9 +341,17 @@ impl App {
     }
 
     fn pump(&mut self, ctx: &egui::Context) {
-        if self.backend.drain() {
+        let (cambio, nuevos) = self.backend.drain();
+        if cambio {
             self.sync_preview();
             ctx.request_repaint();
+        }
+        // Los videos de una lista se encolaron al leerla; ahora hay que
+        // mandarlos a bajar, que es lo que la cola no puede hacer sola.
+        for id in nuevos {
+            if let Some((url, options)) = self.job_data(id) {
+                self.backend.send(Command::Start { id, url, options });
+            }
         }
 
         self.avisar_si_termino();
@@ -548,21 +556,41 @@ impl App {
             return;
         };
 
+        let es_lista = media.playlist_count.is_some();
+        let mut options = self.options.clone();
+        options.playlist = es_lista;
+
         let id = {
             let mut queue = self
                 .backend
                 .queue
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            queue.push_ready(url.clone(), self.options.clone(), media)
+            queue.push_ready(url.clone(), options.clone(), media)
         };
 
-        self.backend.send(Command::Start {
-            id,
-            url,
-            options: self.options.clone(),
-        });
+        if es_lista {
+            // Una lista no se baja como un trabajo: primero hay que saber que
+            // videos trae, y esa lectura la hace el worker.
+            self.backend.send(Command::Expandir { id, url });
+        } else {
+            self.backend.send(Command::Start { id, url, options });
+        }
         self.url.clear();
+    }
+
+    /// La url y las opciones de un trabajo, para poder volver a pedirlo.
+    fn job_data(&self, id: u64) -> Option<(String, Options)> {
+        let queue = self
+            .backend
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue
+            .jobs
+            .iter()
+            .find(|job| job.id == id)
+            .map(|job| (job.url.clone(), job.options.clone()))
     }
 
     /// Vuelve a encolar un trabajo terminado. Los mismos argumentos que la

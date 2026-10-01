@@ -56,6 +56,11 @@ fn cancelar_mata_el_hijo_de_verdad() {
 }
 
 #[test]
+fn una_lista_se_expande_a_una_fila_por_video() {
+    comprobar("expansion");
+}
+
+#[test]
 fn un_trabajo_fallado_se_puede_reintentar() {
     comprobar("reintento");
 }

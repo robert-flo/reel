@@ -44,8 +44,13 @@ Si estas en otro lado y queres mandar algo directo, el menu del tray tiene
 
 Si el enlace es una lista y no un video, la ficha lo dice: `es una lista: 19
 videos`, y el boton cambia a `encolar 19`. Vale avisarlo porque
-`--no-playlist` **no** frena una url de lista: yt-dlp la baja entera. La fila de
-la cola muestra el progreso de la lista como un todo, no una fila por video.
+`--no-playlist` **no** frena una url de lista: yt-dlp la baja entera.
+
+Al encolarla, la lista **se expande a una fila por video**: se pide el listado
+con `--flat-playlist` (que no baja nada, solo los titulos y las duraciones) y
+cada video entra como un trabajo propio, con su progreso, su cancelacion y su
+reintento. La fila de la lista queda arriba como resumen y termina diciendo
+cuantos videos encolo. Si un video de la lista falla, los demas siguen.
 
 ### Los formatos
 
@@ -142,7 +147,7 @@ lo pone en una ventana donde la cola es la pantalla principal.
 | | yoinks | plugin de barra | reel |
 |---|---|---|---|
 | Varias descargas a la vez | no | no | si, hasta 3, con progreso por item |
-| Listas de reproduccion | no | no | si, avisando cuantos videos trae |
+| Listas de reproduccion | no | no | si, una fila por video |
 | Reanudar lo cortado | no | no | si, reintentar reanuda el `.part` |
 | Carpeta y nombre de salida | fijos | fijos | configurables |
 | Cookies del navegador | no | no | si |
@@ -208,7 +213,8 @@ make selfcheck
 
 Miden que dos trabajos se solapen, que el estado de la fila no mienta, que el
 tope se respete, que cancelar mate al hijo, que un trabajo fallado se pueda
-reintentar y que nadie pase de "cancelado" a "listo".
+reintentar, que una lista se expanda a una fila por video y que nadie pase de
+"cancelado" a "listo".
 
 `make selfcheck-net` es la unica que sale a internet. Usa el yt-dlp de verdad
 para comprobar el contrato que las demas no pueden, porque el de mentira acepta
