@@ -273,7 +273,9 @@ cualquier flag: lee los metadatos de un video libre, le pasa los mismos
 argumentos que armaria la app y confirma que el progreso y los avisos de
 postprocesado llegan con la forma que la cola sabe leer. Tambien comprueba que
 una lista de reproduccion se reconozca como lista y no como un video con titulo
-raro.
+raro, y que `volver a bajar` arregle de verdad un archivo que quedo roto: deja
+un archivo corrupto, comprueba que un intento normal lo saltea, y que forzando
+lo baja y lo reemplaza.
 
 ## Estructura
 

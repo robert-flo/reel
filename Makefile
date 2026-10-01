@@ -139,6 +139,7 @@ selfcheck: ## pruebas de la cola con un yt-dlp falso: concurrencia, tope, cancel
 selfcheck-net: ## lo mismo contra el yt-dlp de verdad (necesita internet)
 	cargo build --features selfcheck
 	./$(DEBUG_BIN) --download-selfcheck descarga-real
+	./$(DEBUG_BIN) --download-selfcheck volver-a-bajar
 
 .PHONY: fmt
 fmt: ## formatea

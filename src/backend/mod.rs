@@ -1316,6 +1316,70 @@ echo "DONE|$final"
         println!("OK expansion");
     }
 
+    /// Un archivo que quedo truncado se arregla con `volver a bajar`, y no con
+    /// un reintento normal. Necesita red y el yt-dlp de verdad, porque lo que
+    /// se prueba es justo lo que hace yt-dlp con un archivo que ya existe.
+    fn comprobar_volver_a_bajar(salida: &Path) {
+        std::env::remove_var("REEL_YTDLP");
+
+        let video = salida.join("video");
+        std::fs::create_dir_all(&video).expect("deberia crear la carpeta");
+        // Un archivo con el nombre que va a buscar yt-dlp, pero roto.
+        let roto = video.join("stufffffff.mov");
+        std::fs::write(&roto, b"ARCHIVO CORRUPTO").expect("deberia escribir el roto");
+        let antes = std::fs::metadata(&roto).expect("deberia medirlo").len();
+
+        // Sin metadatos ni capitulos: lo que se prueba es el salteo de un
+        // archivo existente, y el video de prueba no aguanta el postprocesado
+        // (ffmpeg lo rechaza), que seria una falla por otro motivo.
+        let options = Options {
+            output_dir: Some(video.clone()),
+            metadata: false,
+            chapters: false,
+            ..Options::default()
+        };
+
+        // Primero sin forzar: yt-dlp tiene que saltearlo y dejarlo roto, que es
+        // el limite que esto viene a resolver.
+        let (args, _) = download_args(VIDEO_DE_PRUEBA, &options);
+        let salida_ytdlp = Proc::new(ytdlp_binary())
+            .args(&args)
+            .output()
+            .expect("deberia lanzar yt-dlp");
+        assert!(
+            salida_ytdlp.status.success(),
+            "yt-dlp fallo: {}",
+            String::from_utf8_lossy(&salida_ytdlp.stderr)
+        );
+        let igual = std::fs::metadata(&roto).expect("deberia medirlo").len();
+        println!("sin forzar: {antes} -> {igual} bytes (se espera igual)");
+        assert_eq!(igual, antes, "sin forzar no deberia tocar el archivo");
+
+        // Ahora forzando: tiene que bajarlo de nuevo y dejarlo entero.
+        let forzado = Options {
+            force: true,
+            ..options
+        };
+        let (args, _) = download_args(VIDEO_DE_PRUEBA, &forzado);
+        let salida_ytdlp = Proc::new(ytdlp_binary())
+            .args(&args)
+            .output()
+            .expect("deberia lanzar yt-dlp");
+        assert!(
+            salida_ytdlp.status.success(),
+            "yt-dlp fallo: {}",
+            String::from_utf8_lossy(&salida_ytdlp.stderr)
+        );
+
+        let despues = std::fs::metadata(&roto).expect("deberia medirlo").len();
+        println!("forzando:  {igual} -> {despues} bytes");
+        assert!(
+            despues > antes,
+            "forzando deberia haber bajado el video de nuevo ({antes} -> {despues})"
+        );
+        println!("OK volver-a-bajar");
+    }
+
     /// Corre en un proceso propio: prepara un directorio, elige la prueba y
     /// devuelve el codigo de salida. Cero significa que paso.
     pub fn run(modo: &str) -> i32 {
@@ -1333,6 +1397,7 @@ echo "DONE|$final"
             "carrera" => comprobar_carrera_entre_terminar_y_cancelar(&salida),
             "reintento" => comprobar_reintento(&salida),
             "expansion" => comprobar_expansion(&salida),
+            "volver-a-bajar" => comprobar_volver_a_bajar(&salida),
             "descarga-real" => comprobar_descarga_real(&salida),
             otro => panic!("prueba desconocida: {otro}"),
         });
