@@ -46,12 +46,7 @@ where
 {
     let mut running: HashMap<u64, Child> = HashMap::new();
 
-    loop {
-        let command = match commands.recv() {
-            Ok(command) => command,
-            Err(_) => break,
-        };
-
+    while let Ok(command) = commands.recv() {
         match command {
             Command::Shutdown => {
                 for (_, mut child) in running.drain() {
@@ -63,14 +58,20 @@ where
                 if let Some(mut child) = running.remove(&id) {
                     let _ = child.kill();
                 }
-                let _ = events.send(Event::StateChanged { id, state: State::Cancelled });
+                let _ = events.send(Event::StateChanged {
+                    id,
+                    state: State::Cancelled,
+                });
                 wake();
             }
             Command::Probe { id, url } => {
                 match probe(&url) {
                     Ok(media) => {
                         let _ = events.send(Event::Probed { id, media });
-                        let _ = events.send(Event::StateChanged { id, state: State::Queued });
+                        let _ = events.send(Event::StateChanged {
+                            id,
+                            state: State::Queued,
+                        });
                     }
                     Err(reason) => {
                         let _ = events.send(Event::StateChanged {
@@ -82,7 +83,10 @@ where
                 wake();
             }
             Command::Start { id, url, options } => {
-                let _ = events.send(Event::StateChanged { id, state: State::Downloading });
+                let _ = events.send(Event::StateChanged {
+                    id,
+                    state: State::Downloading,
+                });
                 wake();
                 download(id, &url, &options, &events, &wake, &mut running);
             }
@@ -152,19 +156,20 @@ fn download<W>(
         .clone()
         .unwrap_or_else(|| "%(title).120s.%(ext)s".into());
 
-    let mut args: Vec<String> = Vec::new();
-    args.push("--newline".into());
-    args.push("--progress".into());
-    args.push("--no-warnings".into());
-    args.push("--progress-template".into());
-    args.push(PROGRESS_TEMPLATE.into());
-    args.push("--no-playlist".into());
-    args.push("-P".into());
-    args.push(dir.display().to_string());
-    args.push("-o".into());
-    args.push(template);
-    args.push("--print".into());
-    args.push("after_move:DONE|%(filepath)s".into());
+    let mut args: Vec<String> = vec![
+        "--newline".into(),
+        "--progress".into(),
+        "--no-warnings".into(),
+        "--progress-template".into(),
+        PROGRESS_TEMPLATE.into(),
+        "--no-playlist".into(),
+        "-P".into(),
+        dir.display().to_string(),
+        "-o".into(),
+        template,
+        "--print".into(),
+        "after_move:DONE|%(filepath)s".into(),
+    ];
 
     for arg in format.args {
         args.push((*arg).into());
@@ -298,7 +303,12 @@ mod tests {
     fn lee_una_linea_de_progreso() {
         let event = parse_progress(7, " 42.5%|1048576.0|83").expect("deberia parsear");
         match event {
-            Event::Progress { id, progress, speed, eta_secs } => {
+            Event::Progress {
+                id,
+                progress,
+                speed,
+                eta_secs,
+            } => {
                 assert_eq!(id, 7);
                 assert!((progress - 0.425).abs() < 0.001);
                 assert_eq!(speed, Some(1048576.0));
@@ -312,7 +322,9 @@ mod tests {
     fn tolera_campos_vacios() {
         let event = parse_progress(1, "  0.0%|NA|NA").expect("deberia parsear");
         match event {
-            Event::Progress { speed, eta_secs, .. } => {
+            Event::Progress {
+                speed, eta_secs, ..
+            } => {
                 assert_eq!(speed, None);
                 assert_eq!(eta_secs, None);
             }

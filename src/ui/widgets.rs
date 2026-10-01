@@ -16,10 +16,12 @@ pub fn text(content: impl Into<String>, size: f32, weight: Weight, color: Color3
         .color(color)
 }
 
+#[allow(dead_code)]
 pub fn title(content: impl Into<String>, palette: &Palette) -> RichText {
     text(content, 16.0, Weight::SemiBold, palette.text)
 }
 
+#[allow(dead_code)]
 pub fn body(content: impl Into<String>, palette: &Palette) -> RichText {
     text(content, 13.0, Weight::Regular, palette.text)
 }
@@ -34,7 +36,11 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool, palette: &Palette) -> Resp
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         Weight::Medium.font_id(11.0),
-        if selected { palette.on_accent } else { palette.dim },
+        if selected {
+            palette.on_accent
+        } else {
+            palette.dim
+        },
     );
     let size = galley.size() + padding * 2.0;
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -51,13 +57,15 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool, palette: &Palette) -> Resp
         } else {
             Stroke::new(1.0, palette.outline)
         };
-        ui.painter()
-            .rect(rect, CornerRadius::same(13), fill, stroke, egui::StrokeKind::Inside);
-        ui.painter().galley(
-            rect.center() - galley.size() / 2.0,
-            galley,
-            palette.text,
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(13),
+            fill,
+            stroke,
+            egui::StrokeKind::Inside,
         );
+        ui.painter()
+            .galley(rect.center() - galley.size() / 2.0, galley, palette.text);
     }
 
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -67,15 +75,13 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool, palette: &Palette) -> Resp
 /// le corresponda al estado.
 pub fn progress_bar(ui: &mut Ui, fraction: f32, color: Color32, palette: &Palette) {
     let height = 6.0;
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), height),
-        Sense::hover(),
-    );
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
     if !ui.is_rect_visible(rect) {
         return;
     }
     let radius = CornerRadius::same(3);
-    ui.painter().rect_filled(rect, radius, palette.surface_hover);
+    ui.painter()
+        .rect_filled(rect, radius, palette.surface_hover);
     let fraction = fraction.clamp(0.0, 1.0);
     if fraction > 0.0 {
         let mut filled = rect;
@@ -85,6 +91,7 @@ pub fn progress_bar(ui: &mut Ui, fraction: f32, color: Color32, palette: &Palett
 }
 
 /// Un panel con fondo y borde: la tarjeta que se repite en toda la ventana.
+#[allow(dead_code)]
 pub fn card<R>(
     ui: &mut Ui,
     palette: &Palette,

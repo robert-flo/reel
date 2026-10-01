@@ -35,35 +35,64 @@ pub const FORMATS: &[Format] = &[
         id: "2160p",
         label: "4K",
         kind: Kind::Video,
-        args: &["-f", "bv*[height<=2160]+ba/b", "--merge-output-format", "mp4"],
+        args: &[
+            "-f",
+            "bv*[height<=2160]+ba/b",
+            "--merge-output-format",
+            "mp4",
+        ],
     },
     Format {
         id: "1080p",
         label: "1080p",
         kind: Kind::Video,
-        args: &["-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4"],
+        args: &[
+            "-f",
+            "bv*[height<=1080]+ba/b",
+            "--merge-output-format",
+            "mp4",
+        ],
     },
     Format {
         id: "720p",
         label: "720p",
         kind: Kind::Video,
-        args: &["-f", "bv*[height<=720]+ba/b", "--merge-output-format", "mp4"],
+        args: &[
+            "-f",
+            "bv*[height<=720]+ba/b",
+            "--merge-output-format",
+            "mp4",
+        ],
     },
     Format {
         id: "mp3",
         label: "mp3",
         kind: Kind::Audio,
         args: &[
-            "-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "0",
+            "-f",
+            "ba/b",
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "0",
             // El issue 12 de yoinks, resuelto de entrada.
-            "--embed-metadata", "--embed-thumbnail",
+            "--embed-metadata",
+            "--embed-thumbnail",
         ],
     },
     Format {
         id: "opus",
         label: "opus",
         kind: Kind::Audio,
-        args: &["-f", "ba/b", "-x", "--audio-format", "opus", "--embed-metadata"],
+        args: &[
+            "-f",
+            "ba/b",
+            "-x",
+            "--audio-format",
+            "opus",
+            "--embed-metadata",
+        ],
     },
 ];
 
@@ -114,8 +143,12 @@ pub enum State {
     /// yt-dlp esta uniendo pistas o extrayendo audio: hay trabajo, pero no hay
     /// bytes nuevos. yoinks lo muestra como una pausa sin explicacion.
     Postprocessing,
-    Done { path: String },
-    Failed { reason: String },
+    Done {
+        path: String,
+    },
+    Failed {
+        reason: String,
+    },
     Cancelled,
 }
 
@@ -145,18 +178,38 @@ impl Job {
 /// Lo que la interfaz le pide al worker.
 #[derive(Debug)]
 pub enum Command {
-    Probe { id: u64, url: String },
-    Start { id: u64, url: String, options: Options },
-    Cancel { id: u64 },
+    Probe {
+        id: u64,
+        url: String,
+    },
+    Start {
+        id: u64,
+        url: String,
+        options: Options,
+    },
+    Cancel {
+        id: u64,
+    },
     Shutdown,
 }
 
 /// Lo que el worker le cuenta a la interfaz.
 #[derive(Debug)]
 pub enum Event {
-    Probed { id: u64, media: Media },
-    Progress { id: u64, progress: f32, speed: Option<f64>, eta_secs: Option<u64> },
-    StateChanged { id: u64, state: State },
+    Probed {
+        id: u64,
+        media: Media,
+    },
+    Progress {
+        id: u64,
+        progress: f32,
+        speed: Option<f64>,
+        eta_secs: Option<u64>,
+    },
+    StateChanged {
+        id: u64,
+        state: State,
+    },
 }
 
 /// La cola completa, compartida con la interfaz.
@@ -205,7 +258,12 @@ impl Queue {
                     job.media = media;
                 }
             }
-            Event::Progress { id, progress, speed, eta_secs } => {
+            Event::Progress {
+                id,
+                progress,
+                speed,
+                eta_secs,
+            } => {
                 if let Some(job) = self.get_mut(id) {
                     job.progress = progress;
                     job.speed = speed;
@@ -245,7 +303,11 @@ impl Backend {
             .spawn(move || ytdlp::worker(command_rx, event_tx, wake))
             .expect("no se pudo crear el hilo de descargas");
 
-        Self { commands, events, queue }
+        Self {
+            commands,
+            events,
+            queue,
+        }
     }
 
     pub fn send(&self, command: Command) {

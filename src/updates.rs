@@ -17,12 +17,7 @@ pub const UPDATES: UpdateConfig = UpdateConfig {
         legacy_bundle_names: &[],
     },
     publisher_key: None,
-    ..UpdateConfig::new(
-        "robert-flo/reel",
-        "reel",
-        "reel",
-        env!("CARGO_PKG_VERSION"),
-    )
+    ..UpdateConfig::new("robert-flo/reel", "reel", "reel", env!("CARGO_PKG_VERSION"))
 };
 
 /// `Updater` guarda el transporte detras de un objeto, asi que no lleva
@@ -34,8 +29,7 @@ fn updater() -> anyhow::Result<Updater> {
 }
 
 fn reqwest_builder() -> reqwest::blocking::ClientBuilder {
-    reqwest::blocking::Client::builder()
-        .user_agent(concat!("reel/", env!("CARGO_PKG_VERSION")))
+    reqwest::blocking::Client::builder().user_agent(concat!("reel/", env!("CARGO_PKG_VERSION")))
 }
 
 /// Revisa una vez, en un hilo aparte. La app decide cuando llamarlo; el
@@ -44,7 +38,7 @@ pub fn check(tx: Sender<UpdateMessage>) {
     std::thread::spawn(move || {
         let _ = tx.send(UpdateMessage::State(UpdateState::Checking));
 
-        let state = match updater().and_then(|updater| Ok(updater.check()?)) {
+        let state = match updater().and_then(|updater| updater.check()) {
             Ok(Some(release)) => UpdateState::Available {
                 version: release.version.clone(),
             },

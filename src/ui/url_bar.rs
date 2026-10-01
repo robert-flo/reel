@@ -17,16 +17,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         let button_width = 102.0;
-        let field_width =
-            ui.available_width() - (button_width * 2.0) - (Metrics::GAP * 2.0);
+        let field_width = ui.available_width() - (button_width * 2.0) - (Metrics::GAP * 2.0);
 
         let field = egui::TextEdit::singleline(&mut app.url)
-            .hint_text(text(
-                "pega un enlace",
-                13.0,
-                Weight::Regular,
-                palette.dim,
-            ))
+            .hint_text(text("pega un enlace", 13.0, Weight::Regular, palette.dim))
             .font(Weight::Regular.font_id(13.0))
             .margin(egui::Margin::symmetric(16, 0))
             .vertical_align(egui::Align::Center)

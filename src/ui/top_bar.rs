@@ -44,13 +44,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
 fn link(ui: &mut egui::Ui, label: &str, app: &App) -> egui::Response {
     let palette = app.palette;
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        Weight::Regular.font_id(11.0),
-        palette.dim,
-    );
-    let (rect, response) = ui.allocate_exact_size(galley.size() + Vec2::new(4.0, 0.0), Sense::click());
-    let color = if response.hovered() { palette.text } else { palette.dim };
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_owned(), Weight::Regular.font_id(11.0), palette.dim);
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + Vec2::new(4.0, 0.0), Sense::click());
+    let color = if response.hovered() {
+        palette.text
+    } else {
+        palette.dim
+    };
     ui.painter().galley(rect.left_top(), galley, color);
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

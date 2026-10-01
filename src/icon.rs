@@ -47,8 +47,8 @@ pub fn app_icon_rgba(size: usize) -> Vec<u8> {
                 on = false;
             }
             for quarter in 0..4 {
-                let angle = std::f32::consts::FRAC_PI_2 * quarter as f32
-                    + std::f32::consts::FRAC_PI_4;
+                let angle =
+                    std::f32::consts::FRAC_PI_2 * quarter as f32 + std::f32::consts::FRAC_PI_4;
                 let hx = angle.cos() * hole_orbit;
                 let hy = angle.sin() * hole_orbit;
                 let hd = ((dx - hx).powi(2) + (dy - hy).powi(2)).sqrt();
@@ -72,7 +72,7 @@ pub fn app_icon_rgba(size: usize) -> Vec<u8> {
 /// En la barra de menu de macOS el icono se tine solo, asi que va en blanco.
 pub fn tray_template_rgba(size: usize) -> Vec<u8> {
     let mut pixels = app_icon_rgba(size);
-    for chunk in pixels.chunks_exact_mut(4) {
+    for chunk in pixels.as_chunks_mut::<4>().0 {
         if chunk[3] > 0 {
             chunk[0] = 0xff;
             chunk[1] = 0xff;

@@ -148,9 +148,6 @@ fn empty(ui: &mut egui::Ui, app: &App) {
             palette.secondary,
         ));
         ui.add_space(6.0);
-        ui.label(caption(
-            "pega un enlace arriba y aparece aqui",
-            &palette,
-        ));
+        ui.label(caption("pega un enlace arriba y aparece aqui", &palette));
     });
 }

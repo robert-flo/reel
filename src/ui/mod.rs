@@ -18,6 +18,7 @@ impl Metrics {
     pub const STATUS_BAR: f32 = 46.0;
     pub const URL_ROW: f32 = 48.0;
     pub const CARD: f32 = 140.0;
+    #[allow(dead_code)]
     pub const QUEUE_ROW: f32 = 74.0;
     pub const RADIUS: u8 = 10;
 }

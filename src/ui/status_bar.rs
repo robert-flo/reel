@@ -42,11 +42,9 @@ fn update_corner(app: &mut App, ui: &mut egui::Ui) {
         }
         UpdateState::Available { version } => {
             let label = format!("{version} disponible  ·  actualizar");
-            let galley = ui.painter().layout_no_wrap(
-                label,
-                Weight::Medium.font_id(11.0),
-                palette.done,
-            );
+            let galley =
+                ui.painter()
+                    .layout_no_wrap(label, Weight::Medium.font_id(11.0), palette.done);
             let (rect, response) =
                 ui.allocate_exact_size(galley.size() + Vec2::new(4.0, 0.0), Sense::click());
             ui.painter().galley(rect.left_top(), galley, palette.done);

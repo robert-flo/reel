@@ -179,14 +179,9 @@ impl App {
         ui::status_bar::show(self, ui);
 
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(self.palette.window)
-                    .inner_margin(egui::Margin::symmetric(
-                        ui::Metrics::GUTTER as i8,
-                        ui::Metrics::GUTTER as i8,
-                    )),
-            )
+            .frame(egui::Frame::new().fill(self.palette.window).inner_margin(
+                egui::Margin::symmetric(ui::Metrics::GUTTER as i8, ui::Metrics::GUTTER as i8),
+            ))
             .show(ui, |cui| {
                 ui::url_bar::show(self, cui);
                 cui.add_space(ui::Metrics::GAP);
@@ -284,7 +279,7 @@ impl App {
             .or_else(|| self.themes.system_theme());
 
         self.wanted_palette = chosen
-            .map(|theme| theme.palette.clone())
+            .map(|theme| theme.palette)
             .unwrap_or_else(Palette::dark);
     }
 
@@ -316,7 +311,10 @@ impl App {
             queue.push(url.clone(), self.options.clone())
         };
 
-        self.backend.send(Command::Probe { id, url: url.clone() });
+        self.backend.send(Command::Probe {
+            id,
+            url: url.clone(),
+        });
         self.backend.send(Command::Start {
             id,
             url,
