@@ -12,7 +12,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
 
     egui::Panel::top("top-bar")
-        .exact_height(Metrics::TOP_BAR)
+        .exact_size(Metrics::TOP_BAR)
         .frame(
             egui::Frame::new()
                 .fill(palette.panel)

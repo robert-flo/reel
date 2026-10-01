@@ -13,7 +13,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
 
     egui::Panel::bottom("status-bar")
-        .exact_height(Metrics::STATUS_BAR)
+        .exact_size(Metrics::STATUS_BAR)
         .frame(
             egui::Frame::new()
                 .fill(palette.window)
