@@ -52,14 +52,30 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   igual, con lo que el proceso puede quedarse de fondo. Verificado.
 - **La persistencia del tamano de ventana** funciona: verificado en flotante,
   1400x900 se repone. En mosaico no se nota porque manda el compositor.
+- **Limpieza y organizacion de la cola**: botón `limpiar terminadas` en la
+  cabecera para remover de un clic todos los trabajos finalizados, cancelados o
+  fallados, y acción `quitar` en cada fila inactiva para despejar la lista.
+- **Abrir archivo vs abrir carpeta**: en videos y audios descargados, `abrir`
+  lanza el archivo directamente en el reproductor del sistema (`xdg-open`) y
+  `carpeta` abre el directorio contenedor. En filas resumen de listas de
+  reproducción, abre directo la carpeta de descarga configurada sin fallar.
+- **Estimación de duración y tamaño**: la ficha calcula la duración y peso
+  estimado de videos y de listas completas (ej. `19 videos · 3h 45m (~4.2 GB)`).
+- **Confirmación inteligente de dos toques**: para evitar descargas masivas
+  accidentales, se pide confirmación si la lista tiene **10 o más videos** o si el
+  tamaño estimado alcanza o supera **1 GB**.
+- **Subtítulos automáticos de respaldo**: soporte para `--write-auto-subs` junto a
+  `--write-subs`, para incrustar subtítulos generados automáticamente si no hay
+  pistas manuales disponibles en los idiomas elegidos.
+- **Atajos de teclado**: `Ctrl+,` (ajustes), `Ctrl+Q` (salir), `Escape` (cerrar
+  ajustes o limpiar enlace/ficha) y `Ctrl+V` (pegar y buscar automáticamente).
+- **Pruebas de interfaz automatizadas (headless)**: la UI se prueba de extremo a
+  extremo sin necesidad de pantalla ni herramientas externas mediante
+  `egui::Context::run_ui`, validando atajos, confirmaciones y renderizado de
+  componentes.
 
 ### Falta
 
-- **Nada de la interfaz se probo a mano.** Los botones (`reintentar`,
-  `volver a bajar`, `abrir carpeta`, el de dos toques de las listas) tienen test
-  de su logica, pero nadie los apreto: accionar la interfaz pediria un automata
-  de entrada (`ydotool` no esta instalado) y no se agrego una dependencia de
-  test solo para eso. **Es lo mas util que puede hacer quien siga.**
 - **La actualizacion nunca se probo de verdad**, porque el repositorio no tiene
   releases publicados. El 404 se trata como "todavia no hay versiones" y el pie
   se calla, pero el camino de descargar e instalar una version nueva esta sin
@@ -72,9 +88,6 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Un archivo corrupto necesita `volver a bajar` a mano.** No hay deteccion
   automatica: yt-dlp no dice si un archivo existente esta completo, y una
   heuristica por tamano romperia el caso normal.
-- **Las listas no estiman el tamano.** Una lista de 19 videos de YouTube son
-  gigabytes; se pide confirmacion por cantidad (diez o mas), no por peso.
-- **Los subtitulos no se probaron** con yt-dlp real.
 
 ### Trampas que ya nos costaron tiempo
 
@@ -123,21 +136,32 @@ Si estas en otro lado y queres mandar algo directo, el menu del tray tiene
 
 ### Listas de reproduccion
 
-Si el enlace es una lista y no un video, la ficha lo dice: `es una lista: 19
-videos`, y el boton cambia a `encolar 19`. Vale avisarlo porque
-`--no-playlist` **no** frena una url de lista: yt-dlp la baja entera.
+Si el enlace es una lista y no un video, la ficha lo dice e incluye la duración
+total y el peso estimado cuando está disponible: `es una lista: 19 videos · 3h 45m (~4.2 GB)`,
+y el boton cambia a `encolar 19`. Vale avisarlo porque `--no-playlist` **no**
+frena una url de lista: yt-dlp la baja entera.
 
-Una lista de **diez videos o mas** se confirma en dos toques: el primero cambia
-el boton a `confirmar 19` y el segundo encola. Es a proposito: una lista de 19
-videos de YouTube son gigabytes, y encolarla no deberia salir de un clic que
-quiza se queria dar en otro lado. Con menos de diez, encolarla es barato y
-preguntar solo molesta.
+Una lista grande se confirma en dos toques: el primero cambia el boton a
+`confirmar 19` y el segundo encola. Se pide confirmación si la lista tiene **diez
+videos o mas**, o si el peso total estimado es de **1 GB o mas**. Es a
+proposito: una descarga masiva de gigabytes no deberia salir de un clic
+accidental que quiza se queria dar en otro lado. Con listas cortas y ligeras,
+encolarla es directo.
 
 Al encolarla, la lista **se expande a una fila por video**: se pide el listado
 con `--flat-playlist` (que no baja nada, solo los titulos y las duraciones) y
 cada video entra como un trabajo propio, con su progreso, su cancelacion y su
 reintento. La fila de la lista queda arriba como resumen y termina diciendo
 cuantos videos encolo. Si un video de la lista falla, los demas siguen.
+
+### Atajos de teclado
+
+| Atajo | Acción |
+|---|---|
+| `Ctrl+,` | Abrir o cerrar el panel de ajustes |
+| `Ctrl+Q` | Salir de la aplicación |
+| `Escape` | Cerrar modal de ajustes, o limpiar la ficha y el campo de enlace |
+| `Ctrl+V` | Pegar enlace y buscar ficha automáticamente (sin foco en campo de texto) |
 
 ### Los formatos
 
@@ -156,7 +180,8 @@ sitio y las unen en mp4. Con YouTube eso suele dar **av1 de video y opus de
 audio**, que es lo mejor que hay pero no lo abre cualquier reproductor viejo.
 Si el archivo va a un televisor o a un telefono que no los soporte, elegi una
 altura concreta (`720p`) o bajalo en `mp3`. Los subtitulos se bajan y se incrustan en
-los idiomas que elijas en los ajustes.
+los idiomas que elijas en los ajustes (con fallback automático si solo hay
+subtítulos autogenerados).
 
 ## La cola
 
@@ -180,7 +205,13 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
   sobre el mismo archivo roto. Se pide a proposito y no se arrastra: el
   reintento siguiente vuelve a ser normal, porque bajar de cero algo que ya
   esta bien seria tirar ancho de banda.
-- **Abrir carpeta** abre donde quedo el archivo.
+- **Abrir** reproduce el archivo terminado directamente con el reproductor
+  predeterminado (`xdg-open`).
+- **Carpeta** abre el directorio donde quedó el archivo. En las filas de
+  resumen de listas de reproducción, abre la carpeta de salida configurada.
+- **Quitar** elimina la fila individual de la cola (para trabajos no activos).
+- **Limpiar terminadas** en la cabecera remueve todas las descargas inactivas
+  (listas, canceladas o falladas) de una sola vez.
 
 ### Cuantos a la vez
 

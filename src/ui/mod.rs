@@ -48,6 +48,22 @@ pub fn human_speed(bytes_per_second: f64) -> String {
     format!("{value:.1} {}", UNITS[unit])
 }
 
+/// Bytes en unidades legibles (B, KB, MB, GB).
+pub fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 /// Una duracion de video como la escribe YouTube.
 pub fn human_duration(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
@@ -69,6 +85,14 @@ mod tests {
     fn velocidades_legibles() {
         assert_eq!(human_speed(512.0), "512.0 B/s");
         assert_eq!(human_speed(1024.0 * 1024.0 * 14.2), "14.2 MB/s");
+    }
+
+    #[test]
+    fn bytes_legibles() {
+        assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(1024 * 15), "15.0 KB");
+        assert_eq!(human_bytes(1024 * 1024 * 120), "120.0 MB");
+        assert_eq!(human_bytes(1024 * 1024 * 1024 * 4), "4.0 GB");
     }
 
     #[test]

@@ -85,18 +85,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         if !preview.host.is_empty() {
                             meta.push(preview.host.clone());
                         }
+                        if preview.playlist_count.is_none() {
+                            if let Some(filesize) = preview.filesize {
+                                meta.push(super::human_bytes(filesize));
+                            }
+                        }
                         ui.label(caption(meta.join("  ·  "), &palette));
 
                         // `--no-playlist` no frena una url de playlist: se
-                        // baja entera. Mejor decirlo antes de que alguien
-                        // apriete el boton.
+                        // baja entera. Decimos los videos, la duracion y el peso estimado.
                         if let Some(cuantos) = preview.playlist_count {
                             ui.add_space(4.0);
+                            let mut info_lista = Vec::new();
+                            info_lista.push(format!(
+                                "{cuantos} {}",
+                                if cuantos == 1 { "video" } else { "videos" }
+                            ));
+                            if let Some(duration) = preview.duration {
+                                info_lista.push(human_duration(duration));
+                            }
+                            if let Some(filesize) = preview.filesize {
+                                info_lista.push(format!("~{}", super::human_bytes(filesize)));
+                            }
                             ui.label(text(
-                                format!(
-                                    "es una lista: {cuantos} {}",
-                                    if cuantos == 1 { "video" } else { "videos" }
-                                ),
+                                format!("es una lista: {}", info_lista.join("  ·  ")),
                                 11.0,
                                 Weight::Medium,
                                 palette.warning,
@@ -117,9 +129,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     // pregunta y cambia el boton, el segundo encola. Un
                     // encolado de gigabytes no deberia salir de un clic que
                     // quiza se queria dar en otro lado.
+                    let pide_confirmar = preview
+                        .playlist_count
+                        .is_some_and(|cuantos| App::pide_confirmacion(cuantos, preview.filesize));
                     let esperando = app.confirmar_lista == preview.playlist_count;
                     let etiqueta = match preview.playlist_count {
-                        Some(cuantos) if App::pide_confirmacion(cuantos) && esperando => {
+                        Some(cuantos) if pide_confirmar && esperando => {
                             format!("confirmar {cuantos}")
                         }
                         Some(cuantos) => format!("encolar {cuantos}"),
@@ -141,7 +156,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         match preview.playlist_count {
                             // Primer toque en una lista grande: queda armado y
                             // no encola. El segundo confirma.
-                            Some(cuantos) if App::pide_confirmacion(cuantos) && !esperando => {
+                            Some(cuantos) if pide_confirmar && !esperando => {
                                 app.confirmar_lista = Some(cuantos);
                             }
                             _ => {

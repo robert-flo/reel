@@ -71,6 +71,11 @@ fn el_cupo_no_deja_lanzar_todo_a_la_vez() {
 }
 
 #[test]
+fn carrera_entre_terminar_y_cancelar() {
+    comprobar("carrera");
+}
+
+#[test]
 fn una_prueba_desconocida_no_pasa_por_buena() {
     let (paso, texto) = correr("no-existe");
     assert!(!paso, "una prueba inexistente deberia fallar");

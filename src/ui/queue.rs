@@ -15,6 +15,7 @@ use super::{human_eta, human_speed, Metrics};
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let mut reintentar_todo: Option<()> = None;
+    let mut limpiar_terminadas = false;
 
     let (jobs, active, done) = {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -42,7 +43,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ));
             if retryable > 0 {
                 ui.add_space(12.0);
-                let hit = ui
+                let hit_reintentar = ui
                     .add(
                         egui::Label::new(text(
                             format!("reintentar todo ({retryable})"),
@@ -53,8 +54,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .sense(egui::Sense::click()),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if hit.clicked() {
+                if hit_reintentar.clicked() {
                     reintentar_todo = Some(());
+                }
+
+                ui.add_space(10.0);
+                let hit_limpiar = ui
+                    .add(
+                        egui::Label::new(text(
+                            "limpiar terminadas",
+                            11.0,
+                            Weight::Regular,
+                            palette.dim,
+                        ))
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if hit_limpiar.clicked() {
+                    limpiar_terminadas = true;
                 }
             }
         });
@@ -67,69 +84,92 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         return;
     }
 
-    let mut cancel: Option<u64> = None;
-    let mut retry: Option<u64> = None;
-    let mut retry_forzado: Option<u64> = None;
-    let mut abrir: Option<String> = None;
+    let mut actions = RowActions::default();
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for job in &jobs {
-                row(
-                    ui,
-                    app,
-                    job,
-                    &mut cancel,
-                    &mut retry,
-                    &mut retry_forzado,
-                    &mut abrir,
-                );
+                row(ui, app, job, &mut actions);
                 ui.add_space(Metrics::GAP);
             }
         });
 
-    if let Some(id) = cancel {
+    if let Some(id) = actions.cancel {
         app.backend.send(Command::Cancel { id });
     }
     if let Some(()) = reintentar_todo {
         app.retry_failed();
     }
-    if let Some(id) = retry {
+    if limpiar_terminadas {
+        app.clear_finished_jobs();
+    }
+    if let Some(id) = actions.quitar {
+        app.remove_job(id);
+    }
+    if let Some(id) = actions.retry {
         app.retry(id);
     }
-    if let Some(id) = retry_forzado {
+    if let Some(id) = actions.retry_forzado {
         app.retry_forzado(id);
     }
-    if let Some(path) = abrir {
-        revelar(&path);
+    if let Some(path) = actions.abrir_archivo {
+        abrir_archivo(&path);
+    }
+    if let Some((path, dir)) = actions.abrir_carpeta {
+        abrir_carpeta(&path, dir.as_deref());
     }
 }
 
-/// Abre la carpeta del archivo que se bajo, que es lo que uno quiere hacer
-/// despues. El trabajo pesado lo hace el escritorio con `xdg-open`; aca solo
-/// se elige que abrir: la carpeta si se puede, el archivo si no.
-fn revelar(path: &str) {
-    let carpeta = Path::new(path)
+/// Abre el archivo con el reproductor del sistema.
+fn abrir_archivo(path: &str) {
+    let p = Path::new(path);
+    if p.exists() {
+        if let Err(error) = std::process::Command::new("xdg-open").arg(p).spawn() {
+            log::warn!("no pude abrir {}: {error}", p.display());
+        }
+    } else {
+        log::warn!("el archivo no existe: {path}");
+    }
+}
+
+/// Abre la carpeta que contiene el archivo, o la carpeta de salida si es un
+/// resumen de lista.
+fn abrir_carpeta(path: &str, output_dir: Option<&Path>) {
+    let p = Path::new(path);
+    let carpeta: Option<PathBuf> = if p.is_dir() {
+        Some(p.to_path_buf())
+    } else if let Some(padre) = p
         .parent()
-        .filter(|padre| padre.is_dir())
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(path));
+        .filter(|padre| padre.is_dir() && !padre.as_os_str().is_empty())
+    {
+        Some(padre.to_path_buf())
+    } else {
+        output_dir
+            .filter(|d| d.is_dir())
+            .map(|dir| dir.to_path_buf())
+    };
 
-    if let Err(error) = std::process::Command::new("xdg-open").arg(&carpeta).spawn() {
-        log::warn!("no pude abrir {}: {error}", carpeta.display());
+    if let Some(carpeta) = carpeta {
+        if let Err(error) = std::process::Command::new("xdg-open").arg(&carpeta).spawn() {
+            log::warn!("no pude abrir {}: {error}", carpeta.display());
+        }
+    } else {
+        log::warn!("no encontre la carpeta para abrir: {path}");
     }
 }
 
-fn row(
-    ui: &mut egui::Ui,
-    app: &App,
-    job: &crate::backend::Job,
-    cancel: &mut Option<u64>,
-    retry: &mut Option<u64>,
-    retry_forzado: &mut Option<u64>,
-    abrir: &mut Option<String>,
-) {
+#[derive(Default)]
+struct RowActions {
+    cancel: Option<u64>,
+    retry: Option<u64>,
+    retry_forzado: Option<u64>,
+    quitar: Option<u64>,
+    abrir_archivo: Option<String>,
+    abrir_carpeta: Option<(String, Option<PathBuf>)>,
+}
+
+fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut RowActions) {
     let palette = app.palette;
 
     let (status, status_color, detail) = match &job.state {
@@ -213,7 +253,7 @@ fn row(
                                     )
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
-                                    *cancel = Some(job.id);
+                                    actions.cancel = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }
@@ -232,14 +272,17 @@ fn row(
                                     )
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
-                                    *retry = Some(job.id);
+                                    actions.retry = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }
                             // Un archivo que ya esta no se vuelve a bajar al
-                            // reintentar, asi que si el que quedo esta roto
-                            // hay que pedirlo de cero aparte.
-                            if matches!(job.state, State::Done { .. }) && !job.options.force {
+                            // reintentar; volver a bajar solo aplica a videos
+                            // sueltos, no a la fila resumen de una lista.
+                            if !job.options.playlist
+                                && matches!(job.state, State::Done { .. })
+                                && !job.options.force
+                            {
                                 let hit = ui
                                     .add(
                                         egui::Label::new(text(
@@ -252,16 +295,71 @@ fn row(
                                     )
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
-                                    *retry_forzado = Some(job.id);
+                                    actions.retry_forzado = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }
-                            // Un trabajo listo ofrece abrir donde quedo.
+                            // Un trabajo listo ofrece abrir el archivo o la carpeta.
                             if let State::Done { path } = &job.state {
-                                let hit = ui
+                                let es_archivo_real = Path::new(path).is_file();
+                                if es_archivo_real {
+                                    let hit_carpeta = ui
+                                        .add(
+                                            egui::Label::new(text(
+                                                "carpeta",
+                                                11.0,
+                                                Weight::Regular,
+                                                palette.dim,
+                                            ))
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if hit_carpeta.clicked() {
+                                        actions.abrir_carpeta =
+                                            Some((path.clone(), job.options.output_dir.clone()));
+                                    }
+                                    ui.add_space(10.0);
+
+                                    let hit_abrir = ui
+                                        .add(
+                                            egui::Label::new(text(
+                                                "abrir",
+                                                11.0,
+                                                Weight::Regular,
+                                                palette.dim,
+                                            ))
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if hit_abrir.clicked() {
+                                        actions.abrir_archivo = Some(path.clone());
+                                    }
+                                    ui.add_space(10.0);
+                                } else {
+                                    let hit_carpeta = ui
+                                        .add(
+                                            egui::Label::new(text(
+                                                "abrir carpeta",
+                                                11.0,
+                                                Weight::Regular,
+                                                palette.dim,
+                                            ))
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if hit_carpeta.clicked() {
+                                        actions.abrir_carpeta =
+                                            Some((path.clone(), job.options.output_dir.clone()));
+                                    }
+                                    ui.add_space(10.0);
+                                }
+                            }
+                            // Quitar trabajo inactivo de la cola
+                            if !job.is_active() {
+                                let hit_quitar = ui
                                     .add(
                                         egui::Label::new(text(
-                                            "abrir carpeta",
+                                            "quitar",
                                             11.0,
                                             Weight::Regular,
                                             palette.dim,
@@ -269,8 +367,8 @@ fn row(
                                         .sense(egui::Sense::click()),
                                     )
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit.clicked() {
-                                    *abrir = Some(path.clone());
+                                if hit_quitar.clicked() {
+                                    actions.quitar = Some(job.id);
                                 }
                                 ui.add_space(10.0);
                             }

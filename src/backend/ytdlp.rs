@@ -375,6 +375,58 @@ fn media_from_json(json: &serde_json::Value) -> Media {
         .or_else(|| json["entries"][0]["thumbnail"].as_str())
         .map(str::to_string);
 
+    let (duration, filesize) = if playlist_count.is_some() {
+        let mut total_duration = 0.0;
+        let mut total_filesize = 0u64;
+        let mut tiene_duracion = false;
+        let mut tiene_peso = false;
+
+        if let Some(entries) = json["entries"].as_array() {
+            for entry in entries {
+                if let Some(d) = entry["duration"].as_f64() {
+                    total_duration += d;
+                    tiene_duracion = true;
+                }
+                if let Some(s) = entry["filesize"]
+                    .as_u64()
+                    .or_else(|| entry["filesize_approx"].as_u64())
+                {
+                    total_filesize += s;
+                    tiene_peso = true;
+                }
+            }
+        }
+
+        let peso = if tiene_peso && total_filesize > 0 {
+            Some(total_filesize)
+        } else if tiene_duracion && total_duration > 0.0 {
+            // Estimacion a ~2.5 Mbps para video 1080p (~312.5 KB/s)
+            Some((total_duration * 312_500.0) as u64)
+        } else {
+            None
+        };
+
+        (tiene_duracion.then_some(total_duration), peso)
+    } else {
+        let duration = json["duration"].as_f64();
+        let filesize = json["filesize"]
+            .as_u64()
+            .or_else(|| json["filesize_approx"].as_u64())
+            .or_else(|| {
+                json["formats"].as_array().and_then(|formats| {
+                    formats
+                        .iter()
+                        .filter_map(|f| {
+                            f["filesize"]
+                                .as_u64()
+                                .or_else(|| f["filesize_approx"].as_u64())
+                        })
+                        .max()
+                })
+            });
+        (duration, filesize)
+    };
+
     Media {
         title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
         uploader: json["uploader"]
@@ -382,17 +434,13 @@ fn media_from_json(json: &serde_json::Value) -> Media {
             .or_else(|| json["channel"].as_str())
             .unwrap_or("")
             .to_string(),
-        // En una playlist la duracion no significa nada: es la de la lista
-        // entera y yt-dlp no la da.
-        duration: playlist_count
-            .is_none()
-            .then(|| json["duration"].as_f64())
-            .flatten(),
+        duration,
         host: json["extractor_key"].as_str().unwrap_or("").to_lowercase(),
         thumbnail_url,
         playlist_count,
         // Vacia: la url del trabajo ya es esta.
         url: String::new(),
+        filesize,
     }
 }
 
@@ -467,6 +515,10 @@ fn entrada_de_lista(json: &serde_json::Value) -> Option<Media> {
         return None;
     }
 
+    let filesize = json["filesize"]
+        .as_u64()
+        .or_else(|| json["filesize_approx"].as_u64());
+
     Some(Media {
         title: json["title"].as_str().unwrap_or("Sin titulo").to_string(),
         uploader: json["uploader"]
@@ -486,6 +538,7 @@ fn entrada_de_lista(json: &serde_json::Value) -> Option<Media> {
             .map(str::to_string),
         playlist_count: None,
         url: url.to_string(),
+        filesize,
     })
 }
 
@@ -548,6 +601,7 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
     }
     if let Some(languages) = &options.subtitles {
         args.push("--write-subs".into());
+        args.push("--write-auto-subs".into());
         args.push("--sub-langs".into());
         args.push(languages.clone());
         args.push("--embed-subs".into());
@@ -1177,5 +1231,33 @@ mod tests {
                 assert!(count <= 1, "{flag} aparece {count} veces en {format_id}");
             }
         }
+    }
+
+    #[test]
+    fn la_descarga_pide_subtitulos_manuales_y_automaticos() {
+        let options = Options {
+            subtitles: Some("es,en".into()),
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--write-subs"));
+        assert!(args.iter().any(|arg| arg == "--write-auto-subs"));
+        assert!(args.iter().any(|arg| arg == "--embed-subs"));
+        assert!(args.iter().any(|arg| arg == "es,en"));
+    }
+
+    #[test]
+    fn lee_video_con_duracion_y_peso() {
+        let json = serde_json::json!({
+            "title": "Un video",
+            "uploader": "Alguien",
+            "duration": 120.0,
+            "extractor_key": "youtube",
+            "filesize": 1048576,
+        });
+        let media = media_from_json(&json);
+        assert_eq!(media.title, "Un video");
+        assert_eq!(media.duration, Some(120.0));
+        assert_eq!(media.filesize, Some(1048576));
     }
 }

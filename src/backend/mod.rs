@@ -152,6 +152,8 @@ pub struct Media {
     /// La url de este video. Vacia cuando es la misma que la del trabajo (un
     /// video suelto); con algo, cuando viene de una lista y es otra.
     pub url: String,
+    /// El peso estimado o reportado en bytes, si esta disponible.
+    pub filesize: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -334,6 +336,43 @@ mod queue_tests {
             "no deberia reintentar algo activo"
         );
         assert!(queue.retry(999).is_none(), "un id que no existe tampoco");
+    }
+
+    #[test]
+    fn limpiar_terminadas_quita_solo_inactivas() {
+        let mut queue = Queue::default();
+        let _id_listo = job_terminado(
+            &mut queue,
+            State::Done {
+                path: "/tmp/ok.mp4".into(),
+            },
+        );
+        let _id_cancelado = job_terminado(&mut queue, State::Cancelled);
+        let _id_fallado = job_terminado(
+            &mut queue,
+            State::Failed {
+                reason: "error".into(),
+            },
+        );
+        let id_activo = job_terminado(&mut queue, State::Downloading);
+
+        assert_eq!(queue.jobs.len(), 4);
+        let quitados = queue.clear_finished();
+        assert_eq!(quitados, 3);
+        assert_eq!(queue.jobs.len(), 1);
+        assert_eq!(queue.jobs[0].id, id_activo);
+
+        // Quitar individualmente
+        assert!(
+            !queue.remove(id_activo),
+            "no puede quitar un trabajo activo"
+        );
+        queue.jobs[0].state = State::Done {
+            path: "/tmp/final.mp4".into(),
+        };
+        assert!(queue.remove(id_activo), "puede quitar un trabajo terminado");
+        assert!(queue.jobs.is_empty());
+        assert!(!queue.remove(999), "no quita ids inexistentes");
     }
 }
 
@@ -1501,6 +1540,27 @@ impl Queue {
 
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Job> {
         self.jobs.iter_mut().find(|j| j.id == id)
+    }
+
+    /// Quita un trabajo de la cola si ya no esta activo. Devuelve true si lo
+    /// encontro y lo quito.
+    pub fn remove(&mut self, id: u64) -> bool {
+        let Some(pos) = self.jobs.iter().position(|j| j.id == id) else {
+            return false;
+        };
+        if self.jobs[pos].is_active() {
+            return false;
+        }
+        self.jobs.remove(pos);
+        true
+    }
+
+    /// Quita todos los trabajos que no esten activos (completados, fallados o
+    /// cancelados). Devuelve cuantos quito.
+    pub fn clear_finished(&mut self) -> usize {
+        let antes = self.jobs.len();
+        self.jobs.retain(|j| j.is_active());
+        antes - self.jobs.len()
     }
 
     /// Mete los videos de una lista como trabajos propios, cada uno con las

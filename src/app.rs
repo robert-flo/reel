@@ -334,6 +334,7 @@ impl App {
     /// muestran dentro de el: primero los de los bordes, el central de
     /// ultimo.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.handle_shortcuts(ui);
         ui::top_bar::show(self, ui);
         ui::status_bar::show(self, ui);
 
@@ -366,6 +367,50 @@ impl App {
     /// actualizador y del catalogo de temas.
     pub fn background_frame(&mut self, ctx: &egui::Context) {
         self.pump(ctx);
+    }
+
+    /// Atajos de teclado globales:
+    /// - `Ctrl+,`: abrir/cerrar ajustes
+    /// - `Ctrl+Q`: salir
+    /// - `Escape`: cerrar ajustes o limpiar url/vista previa
+    /// - `Ctrl+V` (sin foco en texto): pegar url y obtener vista previa
+    fn handle_shortcuts(&mut self, ui: &egui::Ui) {
+        let foco_en_texto = ui.memory(|m| m.focused().is_some());
+        ui.input(|i| {
+            if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
+                if self.settings_open {
+                    self.settings_open = false;
+                    self.save_settings();
+                } else {
+                    self.open_settings();
+                }
+            }
+
+            if i.modifiers.command && i.key_pressed(egui::Key::Q) {
+                self.quit_requested = true;
+            }
+
+            if i.key_pressed(egui::Key::Escape) {
+                if self.settings_open {
+                    self.settings_open = false;
+                } else if self.preview.is_some() || self.preview_error.is_some() {
+                    self.preview = None;
+                    self.preview_url = None;
+                    self.preview_error = None;
+                    self.probing = false;
+                    self.confirmar_lista = None;
+                } else if !self.url.is_empty() {
+                    self.url.clear();
+                }
+            }
+
+            if !foco_en_texto && i.modifiers.command && i.key_pressed(egui::Key::V) {
+                if let Some(clipped) = self.clipboard_text_uncached() {
+                    self.url = clipped;
+                    self.preview_current_url();
+                }
+            }
+        });
     }
 
     fn pump(&mut self, ctx: &egui::Context) {
@@ -473,10 +518,13 @@ impl App {
     /// Cuantos videos tiene que traer una lista para pedir confirmacion. Con
     /// menos, encolarla es un gesto barato y preguntar solo molesta.
     pub const LISTA_GRANDE: u64 = 10;
+    /// 1 GB en bytes: si una lista pesa mas que esto, tambien pide confirmacion.
+    pub const PESO_GRANDE: u64 = 1_000_000_000;
 
     /// Decide si hay que preguntar antes de encolar una lista.
-    pub fn pide_confirmacion(cuantos: u64) -> bool {
-        cuantos >= Self::LISTA_GRANDE
+    /// Pide confirmacion si trae 10 o mas videos, o si pesa 1 GB o mas.
+    pub fn pide_confirmacion(cuantos: u64, peso: Option<u64>) -> bool {
+        cuantos >= Self::LISTA_GRANDE || peso.is_some_and(|p| p >= Self::PESO_GRANDE)
     }
 
     /// Lee un enlace y lo encola solo, sin pasar por el boton. Es lo que usan
@@ -723,6 +771,26 @@ impl App {
         cuantos
     }
 
+    /// Quita un trabajo de la cola si no esta activo.
+    pub fn remove_job(&mut self, id: u64) -> bool {
+        let mut queue = self
+            .backend
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue.remove(id)
+    }
+
+    /// Quita todos los trabajos terminados (listo, cancelado o fallo) de la cola.
+    pub fn clear_finished_jobs(&mut self) -> usize {
+        let mut queue = self
+            .backend
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue.clear_finished()
+    }
+
     pub fn clipboard_text(&self, _ctx: &egui::Context) -> Option<String> {
         // egui entrega el portapapeles por eventos; en Wayland tambien vale
         // `wl-paste`. Un solo lugar que cambiar cuando se decida cual.
@@ -867,14 +935,270 @@ mod tests {
     use super::App;
 
     /// Una lista chica se encola de un toque; una grande pide confirmar. El
-    /// limite es lo unico que decide, asi que se prueba el borde.
+    /// limite es cantidad (>=10) o peso estimado (>=1 GB).
     #[test]
     fn las_listas_grandes_piden_confirmacion() {
-        assert!(!App::pide_confirmacion(0));
-        assert!(!App::pide_confirmacion(1));
-        assert!(!App::pide_confirmacion(App::LISTA_GRANDE - 1));
-        assert!(App::pide_confirmacion(App::LISTA_GRANDE));
-        assert!(App::pide_confirmacion(19));
-        assert!(App::pide_confirmacion(500));
+        assert!(!App::pide_confirmacion(0, None));
+        assert!(!App::pide_confirmacion(1, None));
+        assert!(!App::pide_confirmacion(App::LISTA_GRANDE - 1, None));
+        assert!(App::pide_confirmacion(App::LISTA_GRANDE, None));
+        assert!(App::pide_confirmacion(19, None));
+        assert!(App::pide_confirmacion(500, None));
+
+        // Por peso: aunque sean pocos videos, si pesa 1 GB o mas se pide confirmar
+        assert!(!App::pide_confirmacion(3, Some(500_000_000)));
+        assert!(App::pide_confirmacion(3, Some(1_000_000_000)));
+        assert!(App::pide_confirmacion(2, Some(2_500_000_000)));
+    }
+
+    #[test]
+    fn quita_y_limpia_trabajos_desde_app() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let id1 = {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id = q.push_ready(
+                "https://ejemplo.test/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id).unwrap().state = crate::backend::State::Done {
+                path: "/tmp/1.mp4".into(),
+            };
+            id
+        };
+        let id2 = {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id = q.push_ready(
+                "https://ejemplo.test/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id).unwrap().state = crate::backend::State::Downloading;
+            id
+        };
+
+        // id2 esta activo, no se puede quitar
+        assert!(!app.remove_job(id2));
+        // id1 esta listo, se quita
+        assert!(app.remove_job(id1));
+
+        // Limpiar terminados
+        let _id3 = {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id = q.push_ready(
+                "https://ejemplo.test/3".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media::default(),
+            );
+            q.get_mut(id).unwrap().state = crate::backend::State::Cancelled;
+            id
+        };
+        assert_eq!(app.clear_finished_jobs(), 1);
+        let q = app.backend.queue.lock().unwrap();
+        assert_eq!(q.jobs.len(), 1);
+        assert_eq!(q.jobs[0].id, id2);
+    }
+
+    #[test]
+    fn crea_app_sin_problemas() {
+        let waker = fastframe_shell::Waker::default();
+        let app = App::new(&waker);
+        assert!(!app.settings_open);
+    }
+
+    #[test]
+    fn dibuja_cola_sin_panico() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::url_bar::show(&mut app, ui);
+            crate::ui::queue::show(&mut app, ui);
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn dibuja_cola_con_trabajos_y_media_card() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        app.preview = Some(crate::backend::Media {
+            title: "Video de prueba".into(),
+            uploader: "Canal de prueba".into(),
+            duration: Some(185.0),
+            host: "youtube".into(),
+            thumbnail_url: None,
+            playlist_count: Some(19),
+            url: "https://ejemplo.test/lista".into(),
+            filesize: Some(1024 * 1024 * 450),
+        });
+        app.preview_url = Some("https://ejemplo.test/lista".into());
+
+        {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id1 = q.push_ready(
+                "https://ejemplo.test/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Primer video".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id1).unwrap().state = crate::backend::State::Done {
+                path: "/tmp/primer_video.mp4".into(),
+            };
+
+            let id2 = q.push_ready(
+                "https://ejemplo.test/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Segundo video".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id2).unwrap().state = crate::backend::State::Downloading;
+            q.get_mut(id2).unwrap().progress = 0.45;
+            q.get_mut(id2).unwrap().speed = Some(1024.0 * 500.0);
+            q.get_mut(id2).unwrap().eta_secs = Some(30);
+
+            let id3 = q.push_ready(
+                "https://ejemplo.test/3".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Tercer video".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id3).unwrap().state = crate::backend::State::Failed {
+                reason: "HTTP Error 403: Forbidden".into(),
+            };
+        }
+
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::url_bar::show(&mut app, ui);
+            crate::ui::media_card::show(&mut app, ui);
+            crate::ui::queue::show(&mut app, ui);
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn atajos_de_teclado_en_interfaz() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        assert!(!app.settings_open);
+        assert!(!app.quit_requested);
+
+        // Ctrl+, abre ajustes
+        let mut input = egui::RawInput::default();
+        let cmd = egui::Modifiers {
+            command: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        input.events.push(egui::Event::ModifiersChanged(cmd));
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Comma,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: cmd,
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        assert!(app.settings_open);
+
+        // Escape cierra ajustes
+        let mut input = egui::RawInput::default();
+        input
+            .events
+            .push(egui::Event::ModifiersChanged(Default::default()));
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        assert!(!app.settings_open);
+
+        // Ctrl+Q pide salir
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::ModifiersChanged(cmd));
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Q,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: cmd,
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        assert!(app.quit_requested);
+    }
+
+    #[test]
+    fn interaccion_con_ficha_y_formatos() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        // Formatos
+        assert_eq!(app.options.format_id, "best");
+        app.select_format("1080p");
+        assert_eq!(app.options.format_id, "1080p");
+        assert_eq!(app.settings.format_id, "1080p");
+
+        app.select_format("mp3");
+        assert_eq!(app.options.format_id, "mp3");
+
+        // Subtitulos
+        app.toggle_subtitle("es");
+        assert!(app.settings.subtitles.contains(&"es".to_string()));
+        app.toggle_subtitle("en");
+        assert!(app.settings.subtitles.contains(&"en".to_string()));
+        app.toggle_subtitle("es");
+        assert!(!app.settings.subtitles.contains(&"es".to_string()));
+    }
+
+    #[test]
+    fn dos_toques_en_lista_grande() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.preview = Some(crate::backend::Media {
+            title: "Lista de 20".into(),
+            playlist_count: Some(20),
+            ..Default::default()
+        });
+        app.preview_url = Some("https://ejemplo.test/lista20".into());
+
+        assert!(App::pide_confirmacion(20, None));
+        assert!(app.confirmar_lista.is_none());
+
+        // Simular primer toque
+        let pide = App::pide_confirmacion(20, None);
+        let esperando = app.confirmar_lista == Some(20);
+        assert!(pide && !esperando);
+        app.confirmar_lista = Some(20);
+
+        // Segundo toque
+        let esperando2 = app.confirmar_lista == Some(20);
+        assert!(esperando2);
+        app.confirmar_lista = None;
+        app.enqueue_preview();
+
+        let q = app.backend.queue.lock().unwrap();
+        assert_eq!(q.jobs.len(), 1);
+        assert_eq!(q.jobs[0].url, "https://ejemplo.test/lista20");
     }
 }
