@@ -1,0 +1,31 @@
+title: reel
+description: Pegas un enlace, elegis un formato, y la cola hace el resto.
+url: https://robert-flo.github.io
+baseurl: /reel
+lang: es
+permalink: pretty
+
+theme: jekyll-vitepress-theme
+plugins:
+  - jekyll-vitepress-theme
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+collections:
+  guides:
+    output: true
+    permalink: "/:name/"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+jekyll_vitepress:
+  branding:
+    site_title: reel

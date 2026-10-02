@@ -1,3 +1,9 @@
+---
+title: La cola
+description: Progreso, cancelar, reintentar, volver a bajar, abrir carpeta.
+nav_order: 3
+---
+
 # La cola
 
 La cola es la pantalla principal. Hasta tres descargas a la vez; lo que
@@ -10,7 +16,7 @@ acciones que correspondan.
 en `en espera` y pasa a `descargando` cuando yt-dlp arranca de verdad.
 Si hay velocidad y tiempo restante, van debajo.
 
-![Fila en descargando con el boton cancelar](images/cola-descargando.png)
+![Fila en descargando con el boton cancelar]({{ '/images/cola-descargando.png' | relative_url }})
 
 `cancelar` mata el proceso. Lo bajado queda en un `.part`, no se marca
 como `listo`.
@@ -25,7 +31,7 @@ audio o incrustar la caratula, la fila dice `esperando ffmpeg` y el
 paso concreto (`fusionando pistas`, `extrayendo el audio`,
 `poniendo la caratula`). La barra se pone ambar.
 
-![Fila en esperando ffmpeg, poniendo la caratula](images/cola-ffmpeg.png)
+![Fila en esperando ffmpeg, poniendo la caratula]({{ '/images/cola-ffmpeg.png' | relative_url }})
 
 Sin ffmpeg, `Mejor`, `1080p` y `mp3` se caen al final. Por eso el pie
 avisa al arrancar si falta.
@@ -34,7 +40,7 @@ avisa al arrancar si falta.
 
 Cuando termina, `listo`, la ruta del archivo, y tres acciones:
 
-![Fila lista con abrir carpeta, volver a bajar y reintentar](images/cola-listo.png)
+![Fila lista con abrir carpeta, volver a bajar y reintentar]({{ '/images/cola-listo.png' | relative_url }})
 
 - **abrir carpeta**: `xdg-open` en el directorio del archivo.
 - **volver a bajar**: lo pide **de cero**, aunque el archivo ya este.

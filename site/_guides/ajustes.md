@@ -1,3 +1,9 @@
+---
+title: Ajustes
+description: Carpeta, formato, nombre, subtitulos, cookies, tema.
+nav_order: 4
+---
+
 # Ajustes
 
 `ajustes` arriba a la derecha (o `reel --settings`) abre el panel.
@@ -7,7 +13,7 @@ en `~/.config/reel/settings.json` y sobrevive al cierre.
 Los campos de texto se confirman al salir del campo o al cerrar, para
 no validar una ruta a medio tipear.
 
-![Panel de ajustes sobre la ventana](images/ajustes.png)
+![Panel de ajustes sobre la ventana]({{ '/images/ajustes.png' | relative_url }})
 
 ## Carpeta de salida
 
