@@ -130,13 +130,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     let button_width = 140.0;
                     let text_width = ui.available_width() - button_width - 14.0;
 
+                    let mut dismissed = false;
                     ui.allocate_ui_with_layout(
                         Vec2::new(text_width, 0.0),
                         Layout::top_down(Align::Min),
                         |ui| {
-                            render_card_info(app, ui, &preview);
+                            dismissed = render_card_info(app, ui, &preview);
                         },
                     );
+                    if dismissed {
+                        return;
+                    }
 
                     ui.add_space(14.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -149,17 +153,37 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_space(14.0);
 
                     ui.vertical(|ui| {
-                        render_card_info(app, ui, &preview);
+                        if render_card_info(app, ui, &preview) {
+                            return;
+                        }
                         ui.add_space(14.0);
                         let btn_width = 140.0f32.min(ui.available_width());
-                        render_download_button(app, ui, &preview, Vec2::new(btn_width, 38.0));
+                        ui.horizontal(|ui| {
+                            render_download_button(app, ui, &preview, Vec2::new(btn_width, 38.0));
+                            ui.add_space(12.0);
+                            let hit_cancel = ui
+                                .add(
+                                    egui::Label::new(text(
+                                        tr.dismiss,
+                                        12.0,
+                                        Weight::Regular,
+                                        palette.dim,
+                                    ))
+                                    .sense(Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text("Esc");
+                            if hit_cancel.clicked() {
+                                app.clear_preview();
+                            }
+                        });
                     });
                 });
             }
         });
 }
 
-fn render_card_info(app: &mut App, ui: &mut egui::Ui, preview: &crate::backend::Media) {
+fn render_card_info(app: &mut App, ui: &mut egui::Ui, preview: &crate::backend::Media) -> bool {
     let palette = app.palette;
     let tr = app.tr();
 
@@ -169,8 +193,35 @@ fn render_card_info(app: &mut App, ui: &mut egui::Ui, preview: &crate::backend::
     } else {
         preview.title.clone()
     };
-    ui.add(egui::Label::new(text(&title, 16.0, Weight::SemiBold, palette.text)).truncate())
-        .on_hover_text(&title);
+
+    let mut dismissed = false;
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let hit_close = ui
+                .add(
+                    egui::Image::new(crate::icon::Icon::Close.uri())
+                        .fit_to_exact_size(Vec2::splat(13.0))
+                        .tint(palette.dim),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(format!("{} (Esc)", tr.dismiss));
+            if hit_close.clicked() {
+                dismissed = true;
+            }
+            ui.add_space(8.0);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(text(&title, 16.0, Weight::SemiBold, palette.text)).truncate(),
+                )
+                .on_hover_text(&title);
+            });
+        });
+    });
+
+    if dismissed {
+        app.clear_preview();
+        return true;
+    }
     ui.add_space(6.0);
 
     let mut meta = Vec::new();
@@ -212,6 +263,7 @@ fn render_card_info(app: &mut App, ui: &mut egui::Ui, preview: &crate::backend::
     formats(app, ui);
     ui.add_space(10.0);
     extras(app, ui);
+    false
 }
 
 fn render_download_button(

@@ -24,6 +24,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 let dir_hit = ui
                     .add(
                         egui::Label::new(caption(app.output_dir_label(), &palette))
+                            .truncate()
                             .sense(Sense::click()),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -38,10 +39,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     update_corner(app, ui);
-                    ui.add_space(16.0);
-                    herramientas_corner(app, ui);
-                    ui.add_space(16.0);
-                    ui.label(caption(app.theme_label(), &palette));
+                    if ui.available_width() > 220.0 {
+                        ui.add_space(16.0);
+                        herramientas_corner(app, ui);
+                    }
+                    if ui.available_width() > 140.0 {
+                        ui.add_space(16.0);
+                        ui.label(caption(app.theme_label(), &palette));
+                    }
                 });
             });
         });

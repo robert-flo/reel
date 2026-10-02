@@ -411,11 +411,29 @@ impl App {
             .show(ui, |cui| {
                 ui::url_bar::show(self, cui);
                 cui.add_space(ui::Metrics::GAP);
-                if self.preview.is_some() || self.preview_error.is_some() || self.probing {
-                    ui::media_card::show(self, cui);
-                    cui.add_space(ui::Metrics::GAP + 6.0);
+                let has_card =
+                    self.preview.is_some() || self.preview_error.is_some() || self.probing;
+                let queue_empty = {
+                    let queue = self
+                        .backend
+                        .queue
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    queue.jobs.is_empty()
+                };
+                if has_card {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(cui, |ui| {
+                            ui::media_card::show(self, ui);
+                            if !queue_empty {
+                                ui.add_space(ui::Metrics::GAP + 6.0);
+                                ui::queue::show(self, ui);
+                            }
+                        });
+                } else {
+                    ui::queue::show(self, cui);
                 }
-                ui::queue::show(self, cui);
             });
 
         // El modal va despues del panel central: encima de todo, con su velo
@@ -472,14 +490,7 @@ impl App {
                 if self.settings_open {
                     self.settings_open = false;
                 } else if self.preview.is_some() || self.preview_error.is_some() || self.probing {
-                    self.preview = None;
-                    self.preview_url = None;
-                    self.preview_error = None;
-                    self.probing = false;
-                    self.confirmar_lista = None;
-                    self.clip_enabled = false;
-                    self.clip_start.clear();
-                    self.clip_end.clear();
+                    self.clear_preview();
                 } else if !self.queue_search.is_empty() {
                     self.queue_search.clear();
                 } else if !self.url.is_empty() {
@@ -831,8 +842,20 @@ impl App {
         self.backend.send(Command::Preview { url });
     }
 
-    /// Paso dos: con el formato ya elegido, a descargar. La ficha se queda
-    /// puesta para poder encolar otra calidad del mismo enlace.
+    /// Limpia la ficha de vista previa activa, errores y estados de recorte.
+    pub fn clear_preview(&mut self) {
+        self.preview = None;
+        self.preview_url = None;
+        self.preview_error = None;
+        self.probing = false;
+        self.confirmar_lista = None;
+        self.clip_enabled = false;
+        self.clip_start.clear();
+        self.clip_end.clear();
+    }
+
+    /// Paso dos: con el formato ya elegido, a descargar. La ficha se descarta
+    /// para mostrar el avance de la descarga en la cola.
     pub fn enqueue_preview(&mut self) {
         let (Some(url), Some(media)) = (self.preview_url.clone(), self.preview.clone()) else {
             return;
@@ -863,6 +886,7 @@ impl App {
             self.backend.send(Command::Start { id, url, options });
         }
         self.url.clear();
+        self.clear_preview();
     }
 
     /// La url y las opciones de un trabajo, para poder volver a pedirlo.
@@ -1987,5 +2011,104 @@ mod tests {
             app.ui(ui);
         });
         out_wide.textures_delta.clear();
+    }
+
+    #[test]
+    fn enqueue_preview_descarta_la_ficha_y_expone_la_cola() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.url = "https://ejemplo.test/video".into();
+        app.preview_url = Some("https://ejemplo.test/video".into());
+        app.preview = Some(crate::backend::Media {
+            title: "Video a descargar".into(),
+            ..Default::default()
+        });
+        app.clip_enabled = true;
+        app.clip_start = "00:10".into();
+        app.clip_end = "00:30".into();
+
+        app.enqueue_preview();
+
+        assert!(app.url.is_empty(), "la barra de url debe quedar vacia");
+        assert!(app.preview.is_none(), "la ficha debe haberse descartado");
+        assert!(app.preview_url.is_none());
+        assert!(!app.clip_enabled);
+        assert!(app.clip_start.is_empty());
+        assert!(app.clip_end.is_empty());
+
+        let queue = app.backend.queue.lock().unwrap();
+        assert_eq!(queue.jobs.len(), 1);
+        assert_eq!(queue.jobs[0].url, "https://ejemplo.test/video");
+    }
+
+    #[test]
+    fn clear_preview_limpia_todo_el_estado_de_la_ficha() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        app.preview = Some(crate::backend::Media::default());
+        app.preview_url = Some("https://ejemplo.test/v".into());
+        app.preview_error = Some("error".into());
+        app.probing = true;
+        app.confirmar_lista = Some(5);
+        app.clip_enabled = true;
+        app.clip_start = "00:01".into();
+        app.clip_end = "00:05".into();
+
+        app.clear_preview();
+
+        assert!(app.preview.is_none());
+        assert!(app.preview_url.is_none());
+        assert!(app.preview_error.is_none());
+        assert!(!app.probing);
+        assert!(app.confirmar_lista.is_none());
+        assert!(!app.clip_enabled);
+        assert!(app.clip_start.is_empty());
+        assert!(app.clip_end.is_empty());
+    }
+
+    #[test]
+    fn ventana_compacta_dibuja_panel_central_con_ficha_y_cola() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        app.preview = Some(crate::backend::Media {
+            title: "Video en ventana enana".into(),
+            uploader: "Canal".into(),
+            duration: Some(120.0),
+            host: "youtube".into(),
+            ..Default::default()
+        });
+        app.preview_url = Some("https://ejemplo.test/v".into());
+
+        {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id = q.push_ready(
+                "https://ejemplo.test/trabajo".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Descarga existente".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id).unwrap().state = crate::backend::State::Downloading;
+            q.get_mut(id).unwrap().progress = 0.5;
+        }
+
+        // Ventana muy pequeña: 400x350px
+        let raw_small = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(400.0, 350.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw_small, |ui| {
+            app.ui(ui);
+        });
+        out.textures_delta.clear();
     }
 }
