@@ -135,6 +135,10 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   en un espacio de trabajo en segundo plano o inactivo, previniendo el error "Application Not Responding".
 - **Aislamiento de bandeja en pruebas**: las pruebas unitarias ya no instancian iconos en el área
   de notificación (D-Bus StatusNotifierItem), evitando saturar la barra o dock de Omarchy.
+- **Simplificación y poda de módulos superficiales**: eliminación del módulo trivial `fonts.rs`
+  (incorporado directamente en `App::attach`), consolidación de los componentes de `widgets.rs`
+  dentro de `src/ui/mod.rs`, y poda de variantes SVG no utilizadas en el catálogo de iconos,
+  reduciendo la indirección innecesaria conforme a *A Philosophy of Software Design*.
 
 ### Falta
 

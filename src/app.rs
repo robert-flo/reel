@@ -363,13 +363,21 @@ impl App {
     }
 
     pub fn attach(&mut self, ctx: &egui::Context) {
-        crate::fonts::setup(ctx);
+        Self::setup_fonts(ctx);
         egui_extras::install_image_loaders(ctx);
         crate::icon::install(ctx);
         self.apply_palette(ctx, self.palette);
         if let Some(tray) = &mut self.tray {
             tray.attach();
         }
+    }
+
+    fn setup_fonts(ctx: &egui::Context) {
+        let mut fonts = fastframe_fonts::FontSetup::default().definitions();
+        let rendering = fastframe_text::detect();
+        rendering.apply_to(&mut fonts);
+        ctx.set_fonts(fonts);
+        ctx.all_styles_mut(|style| rendering.apply_to_visuals(&mut style.visuals));
     }
 
     fn apply_palette(&mut self, ctx: &egui::Context, palette: Palette) {

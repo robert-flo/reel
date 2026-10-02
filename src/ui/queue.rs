@@ -9,8 +9,7 @@ use fastframe_fonts::Weight;
 use crate::app::{App, QueueFilter};
 use crate::backend::{Command, State};
 
-use super::widgets::{caption, progress_bar, text};
-use super::{human_eta, human_speed, Metrics};
+use super::{caption, human_eta, human_speed, progress_bar, text, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;

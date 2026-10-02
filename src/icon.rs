@@ -8,17 +8,8 @@ fastframe_icons::icons! {
     pub enum Icon {
         prefix: "reel-icon-",
         directory: "../assets/icons/",
-        // Los que fastframe ya comparte.
-        Settings => lucide "settings",
         Close => lucide "x",
         Check => lucide "check",
-        Clipboard => lucide "copy",
-        Retry => lucide "refresh-cw",
-        Open => lucide "external-link",
-        // Los nuestros, desde assets/icons/.
-        Download => "download",
-        Folder => "folder",
-        Palette => "palette",
     }
 }
 

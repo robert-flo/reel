@@ -9,8 +9,7 @@ use fastframe_fonts::Weight;
 use crate::app::App;
 use crate::backend::{Kind, FORMATS};
 
-use super::widgets::{caption, chip, text};
-use super::{human_duration, Metrics};
+use super::{caption, chip, human_duration, text, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;

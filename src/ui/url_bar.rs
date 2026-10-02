@@ -8,8 +8,7 @@ use fastframe_fonts::Weight;
 
 use crate::app::App;
 
-use super::widgets::text;
-use super::Metrics;
+use super::{text, Metrics};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;

@@ -16,8 +16,7 @@ use fastframe_fonts::Weight;
 use crate::app::App;
 use crate::settings::{self, DirProblem};
 
-use super::widgets::{chip, text};
-use super::Metrics;
+use super::{chip, text, Metrics};
 
 /// El ancho del panel: es una ventana de ajustes, no una fila.
 const PANEL_WIDTH: f32 = 640.0;
