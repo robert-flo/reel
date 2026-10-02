@@ -157,6 +157,12 @@ lint: ## clippy con los warnings como errores
 verify: fmt-check lint test ## lo que tiene que pasar antes de un commit
 	$(call say,"todo limpio")
 
+.PHONY: site-serve
+site-serve: ## sirve el sitio de documentacion en local (site/)
+	cd site && bundle config set --local path vendor/bundle
+	cd site && bundle check >/dev/null || bundle install
+	cd site && bundle exec jekyll serve --livereload
+
 .PHONY: clean
 clean: ## borra target/
 	cargo clean
