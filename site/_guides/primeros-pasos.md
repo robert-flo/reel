@@ -1,3 +1,9 @@
+---
+title: Primeros pasos
+description: Pegar un enlace, buscarlo y mandarlo a bajar.
+nav_order: 1
+---
+
 # Primeros pasos
 
 Pegas un enlace, apretas `buscar`, elegis el formato, y `descargar` lo
@@ -8,7 +14,7 @@ manda a la cola. Eso es todo el gesto.
 Al abrir reel ves la barra de arriba (`reel`, la version, `ajustes`), el
 campo `pega un enlace`, los botones `pegar` y `buscar`, y la cola vacia.
 
-![Pantalla inicial con la cola vacia](images/pantalla-inicial.png)
+![Pantalla inicial con la cola vacia]({{ '/images/pantalla-inicial.png' | relative_url }})
 
 El pie dice donde van a caer los archivos. Si no tocaste los ajustes,
 el video va a `~/Videos` y el audio a `~/Music`. A la derecha, el tema
@@ -21,7 +27,7 @@ pie lo avisa en ambar.
 el campo. Tambien podes escribirlo o pegarlo con el teclado. Con algo
 escrito, `buscar` se enciende.
 
-![Enlace de archive.org pegado en el campo](images/enlace-pegado.png)
+![Enlace de archive.org pegado en el campo]({{ '/images/enlace-pegado.png' | relative_url }})
 
 En estas capturas el enlace es el video corto de prueba de archive.org.
 Vale cualquier sitio que sepa yt-dlp.
@@ -32,7 +38,7 @@ Vale cualquier sitio que sepa yt-dlp.
 autor, duracion, de donde viene. Mientras tanto el boton dice `leyendo`
 y no se puede apretar de nuevo.
 
-![El boton buscar dice leyendo](images/leyendo-enlace.png)
+![El boton buscar dice leyendo]({{ '/images/leyendo-enlace.png' | relative_url }})
 
 Cuando termina, aparece la ficha. Ahi elegis el formato y recien ahi
 mandas a descargar. Sigue en [buscar](buscar.md).
