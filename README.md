@@ -472,8 +472,9 @@ mismo archivo de estado.
 
 ## Como se prueba
 
-Antes de un commit, `make verify` corre el formato, clippy con los warnings como
-errores y todas las pruebas:
+Antes de un commit, `make verify` revisa el formato sin tocar nada, clippy con los
+warnings como errores y todas las pruebas. Si el formato falla, `make fmt` lo
+arregla:
 
 ```sh
 make verify
