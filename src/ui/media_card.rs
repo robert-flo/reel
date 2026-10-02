@@ -106,131 +106,154 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         return;
     };
 
+    let available_w = ui.available_width();
+    let is_wide = available_w >= 620.0;
+    let thumb_size = if available_w < 480.0 {
+        let w = (available_w * 0.4).clamp(140.0, 220.0);
+        let h = (w * 9.0 / 16.0).round();
+        Vec2::new(w, h)
+    } else {
+        Vec2::new(220.0, Metrics::CARD - 28.0)
+    };
+
     egui::Frame::new()
         .fill(palette.panel)
         .stroke(Stroke::new(1.0, palette.outline))
         .corner_radius(CornerRadius::same(Metrics::RADIUS))
         .inner_margin(egui::Margin::same(14))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                thumbnail(ui, app, preview.thumbnail_url.as_deref());
-                ui.add_space(14.0);
+            if is_wide {
+                ui.horizontal(|ui| {
+                    thumbnail(ui, app, preview.thumbnail_url.as_deref(), thumb_size);
+                    ui.add_space(14.0);
 
-                // El boton se reserva su ancho antes que el titulo, para que
-                // un titulo largo lo recorte a el y no al reves.
-                let button_width = 148.0;
-                let text_width = (ui.available_width() - button_width - 16.0).max(180.0);
+                    let button_width = 140.0;
+                    let text_width = ui.available_width() - button_width - 14.0;
 
-                ui.allocate_ui_with_layout(
-                    Vec2::new(text_width, Metrics::CARD - 28.0),
-                    Layout::top_down(Align::Min),
-                    |ui| {
-                        ui.add_space(4.0);
-                        let title = if preview.title.is_empty() {
-                            tr.untitled.to_string()
-                        } else {
-                            preview.title.clone()
-                        };
-                        ui.add(
-                            egui::Label::new(text(&title, 16.0, Weight::SemiBold, palette.text))
-                                .truncate(),
-                        )
-                        .on_hover_text(&title);
-                        ui.add_space(6.0);
-
-                        let mut meta = Vec::new();
-                        if !preview.uploader.is_empty() {
-                            meta.push(preview.uploader.clone());
-                        }
-                        if let Some(duration) = preview.duration {
-                            meta.push(human_duration(duration));
-                        }
-                        if !preview.host.is_empty() {
-                            meta.push(preview.host.clone());
-                        }
-                        if preview.playlist_count.is_none() {
-                            if let Some(filesize) = preview.filesize {
-                                meta.push(super::human_bytes(filesize));
-                            }
-                        }
-                        ui.label(caption(meta.join("  ·  "), &palette));
-
-                        // `--no-playlist` no frena una url de playlist: se
-                        // baja entera. Decimos los videos, la duracion y el peso estimado.
-                        if let Some(cuantos) = preview.playlist_count {
-                            ui.add_space(4.0);
-                            let mut info_lista = Vec::new();
-                            info_lista.push(tr.n_videos(cuantos));
-                            if let Some(duration) = preview.duration {
-                                info_lista.push(human_duration(duration));
-                            }
-                            if let Some(filesize) = preview.filesize {
-                                info_lista.push(format!("~{}", super::human_bytes(filesize)));
-                            }
-                            ui.label(text(
-                                format!("{} {}", tr.playlist_prefix, info_lista.join("  ·  ")),
-                                11.0,
-                                Weight::Medium,
-                                palette.warning,
-                            ));
-                        }
-
-                        ui.add_space(12.0);
-                        formats(app, ui);
-                        ui.add_space(10.0);
-                        extras(app, ui);
-                    },
-                );
-
-                // "a la cola", pegado a la derecha y centrado en la tarjeta,
-                // como en el boceto.
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    // Una lista grande se confirma en dos toques: el primero
-                    // pregunta y cambia el boton, el segundo encola. Un
-                    // encolado de gigabytes no deberia salir de un clic que
-                    // quiza se queria dar en otro lado.
-                    let pide_confirmar = preview
-                        .playlist_count
-                        .is_some_and(|cuantos| App::pide_confirmacion(cuantos, preview.filesize));
-                    let esperando = app.confirmar_lista == preview.playlist_count;
-                    let etiqueta = match preview.playlist_count {
-                        Some(cuantos) if pide_confirmar && esperando => tr.confirm_n(cuantos),
-                        Some(cuantos) => tr.enqueue_n(cuantos),
-                        None => tr.download.to_string(),
-                    };
-                    let go = ui.add_sized(
-                        Vec2::new(140.0, 38.0),
-                        egui::Button::new(text(
-                            etiqueta,
-                            13.0,
-                            Weight::SemiBold,
-                            palette.on_accent,
-                        ))
-                        .fill(palette.accent)
-                        .stroke(Stroke::NONE)
-                        .corner_radius(CornerRadius::same(8)),
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(text_width, 0.0),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            render_card_info(app, ui, &preview);
+                        },
                     );
-                    if go.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        match preview.playlist_count {
-                            // Primer toque en una lista grande: queda armado y
-                            // no encola. El segundo confirma.
-                            Some(cuantos) if pide_confirmar && !esperando => {
-                                app.confirmar_lista = Some(cuantos);
-                            }
-                            _ => {
-                                app.confirmar_lista = None;
-                                app.enqueue_preview();
-                            }
-                        }
-                    }
+
+                    ui.add_space(14.0);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        render_download_button(app, ui, &preview, Vec2::new(button_width, 38.0));
+                    });
                 });
-            });
+            } else {
+                ui.horizontal(|ui| {
+                    thumbnail(ui, app, preview.thumbnail_url.as_deref(), thumb_size);
+                    ui.add_space(14.0);
+
+                    ui.vertical(|ui| {
+                        render_card_info(app, ui, &preview);
+                        ui.add_space(14.0);
+                        let btn_width = 140.0f32.min(ui.available_width());
+                        render_download_button(app, ui, &preview, Vec2::new(btn_width, 38.0));
+                    });
+                });
+            }
         });
 }
 
-fn thumbnail(ui: &mut egui::Ui, app: &App, url: Option<&str>) {
+fn render_card_info(app: &mut App, ui: &mut egui::Ui, preview: &crate::backend::Media) {
     let palette = app.palette;
-    let size = Vec2::new(220.0, Metrics::CARD - 28.0);
+    let tr = app.tr();
+
+    ui.add_space(4.0);
+    let title = if preview.title.is_empty() {
+        tr.untitled.to_string()
+    } else {
+        preview.title.clone()
+    };
+    ui.add(egui::Label::new(text(&title, 16.0, Weight::SemiBold, palette.text)).truncate())
+        .on_hover_text(&title);
+    ui.add_space(6.0);
+
+    let mut meta = Vec::new();
+    if !preview.uploader.is_empty() {
+        meta.push(preview.uploader.clone());
+    }
+    if let Some(duration) = preview.duration {
+        meta.push(human_duration(duration));
+    }
+    if !preview.host.is_empty() {
+        meta.push(preview.host.clone());
+    }
+    if preview.playlist_count.is_none() {
+        if let Some(filesize) = preview.filesize {
+            meta.push(super::human_bytes(filesize));
+        }
+    }
+    ui.label(caption(meta.join("  ·  "), &palette));
+
+    if let Some(cuantos) = preview.playlist_count {
+        ui.add_space(4.0);
+        let mut info_lista = Vec::new();
+        info_lista.push(tr.n_videos(cuantos));
+        if let Some(duration) = preview.duration {
+            info_lista.push(human_duration(duration));
+        }
+        if let Some(filesize) = preview.filesize {
+            info_lista.push(format!("~{}", super::human_bytes(filesize)));
+        }
+        ui.label(text(
+            format!("{} {}", tr.playlist_prefix, info_lista.join("  ·  ")),
+            11.0,
+            Weight::Medium,
+            palette.warning,
+        ));
+    }
+
+    ui.add_space(12.0);
+    formats(app, ui);
+    ui.add_space(10.0);
+    extras(app, ui);
+}
+
+fn render_download_button(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    preview: &crate::backend::Media,
+    size: Vec2,
+) {
+    let palette = app.palette;
+    let tr = app.tr();
+
+    let pide_confirmar = preview
+        .playlist_count
+        .is_some_and(|cuantos| App::pide_confirmacion(cuantos, preview.filesize));
+    let esperando = app.confirmar_lista == preview.playlist_count;
+    let etiqueta = match preview.playlist_count {
+        Some(cuantos) if pide_confirmar && esperando => tr.confirm_n(cuantos),
+        Some(cuantos) => tr.enqueue_n(cuantos),
+        None => tr.download.to_string(),
+    };
+    let go = ui.add_sized(
+        size,
+        egui::Button::new(text(etiqueta, 13.0, Weight::SemiBold, palette.on_accent))
+            .fill(palette.accent)
+            .stroke(Stroke::NONE)
+            .corner_radius(CornerRadius::same(8)),
+    );
+    if go.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+        match preview.playlist_count {
+            Some(cuantos) if pide_confirmar && !esperando => {
+                app.confirmar_lista = Some(cuantos);
+            }
+            _ => {
+                app.confirmar_lista = None;
+                app.enqueue_preview();
+            }
+        }
+    }
+}
+
+fn thumbnail(ui: &mut egui::Ui, app: &App, url: Option<&str>, size: Vec2) {
+    let palette = app.palette;
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     if !ui.is_rect_visible(rect) {
         return;

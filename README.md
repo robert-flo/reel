@@ -140,6 +140,7 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   dentro de `src/ui/mod.rs`, y poda de variantes SVG no utilizadas en el catálogo de iconos,
   reduciendo la indirección innecesaria conforme a *A Philosophy of Software Design*.
 - **Aviso claro ante enlaces sin contenido multimedia**: si se ingresa un enlace que no contiene video ni audio (como un tweet de texto en X, una página web sin medios o un enlace no soportado), Reel muestra de inmediato una tarjeta informativa clara indicando `no se encontraron archivos multimedia en el enlace` (o `no media found in this link`), junto con el detalle técnico de yt-dlp, botón para copiar el error y botón para descartarlo con un clic o pulsando `Escape`.
+- **Diseño responsivo de la tarjeta de descarga en ventanas pequeñas**: cuando la ventana se ejecuta en un tamaño compacto o en paneles divididos (como en escritorios en mosaico Hyprland/Omarchy), la tarjeta adapta su estructura dinámicamente; el botón `descargar` se ubica de forma natural debajo de los formatos y opciones adicionales, evitando cualquier superposición o descolocación sobre las pastillas de calidad.
 
 ### Falta
 

@@ -1943,4 +1943,49 @@ mod tests {
         let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
         assert!(queue.preview_error.is_none());
     }
+
+    #[test]
+    fn media_card_layout_adaptable_a_ventana_pequena() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        app.preview = Some(crate::backend::Media {
+            title: "Carmine Paolino - Video de prueba con titulo largo".into(),
+            uploader: "Carmine Paolino".into(),
+            duration: Some(61.0),
+            host: "twitter".into(),
+            thumbnail_url: None,
+            playlist_count: None,
+            url: "https://x.com/paolino/status/123".into(),
+            filesize: Some(1024 * 1024 * 76),
+        });
+
+        // 1. Prueba en ventana pequeña (460px de ancho, como en la captura del usuario)
+        let raw_narrow = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(460.0, 500.0),
+            )),
+            ..Default::default()
+        };
+        let mut out_narrow = ctx.run_ui(raw_narrow, |ui| {
+            app.ui(ui);
+        });
+        out_narrow.textures_delta.clear();
+
+        // 2. Prueba en ventana ancha (900px de ancho)
+        let raw_wide = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(900.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut out_wide = ctx.run_ui(raw_wide, |ui| {
+            app.ui(ui);
+        });
+        out_wide.textures_delta.clear();
+    }
 }
