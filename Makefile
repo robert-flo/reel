@@ -145,12 +145,16 @@ selfcheck-net: ## lo mismo contra el yt-dlp de verdad (necesita internet)
 fmt: ## formatea
 	cargo fmt --all
 
+.PHONY: fmt-check
+fmt-check: ## revisa el formato sin tocar nada; falla si hay algo pendiente
+	cargo fmt --all --check
+
 .PHONY: lint
 lint: ## clippy con los warnings como errores
 	cargo clippy --all-targets --features selfcheck -- -D warnings
 
 .PHONY: verify
-verify: fmt lint test ## lo que tiene que pasar antes de un commit
+verify: fmt-check lint test ## lo que tiene que pasar antes de un commit
 	$(call say,"todo limpio")
 
 .PHONY: clean
