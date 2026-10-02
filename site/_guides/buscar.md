@@ -1,6 +1,6 @@
 ---
 title: Buscar
-description: La ficha: formatos, capitulos, metadatos, subtitulos.
+description: "La ficha: formatos, capitulos, metadatos, subtitulos."
 nav_order: 2
 ---
 
