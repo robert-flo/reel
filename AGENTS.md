@@ -8,7 +8,7 @@ Punteros para agentes que trabajan en reel. Lo demas vive donde apunta cada uno.
 - Los textos que ve el usuario van en el modulo de i18n,
   [`src/i18n.rs`](src/i18n.rs), no regados por la interfaz.
 - Si cambias la interfaz, regenera las capturas siguiendo
-  [`docs/README.md`](docs/README.md). Si no se puede capturar, decilo en el PR
+  [`site/capturas.md`](site/capturas.md). Si no se puede capturar, decilo en el PR
   y no dejes ninguna imagen falsa.
 - Las guias de agentes estan en [`docs/agents/`](docs/agents/):
   [issue tracker](docs/agents/issue-tracker.md),

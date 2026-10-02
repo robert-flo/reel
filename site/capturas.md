@@ -1,16 +1,21 @@
+---
+title: Capturas
+description: Qué se capturó de la ventana y qué no.
+---
+
 # Guias de reel
 
 Tutoriales cortos, en el mismo tono que la app, con capturas de una
 ventana real. No hay mockups: cada imagen es un screenshot de reel 0.1.0.
 
-Si recien llegas, empeza por [primeros pasos](primeros-pasos.md).
+Si recien llegas, empeza por [primeros pasos]({% link _guides/primeros-pasos.md %}).
 
 | Guia | De que va |
 |---|---|
-| [Primeros pasos](primeros-pasos.md) | Pegar un enlace, buscarlo y mandarlo a bajar |
-| [Buscar](buscar.md) | La ficha: formatos, capitulos, metadatos, subtitulos |
-| [La cola](cola.md) | Progreso, cancelar, reintentar, volver a bajar, abrir carpeta |
-| [Ajustes](ajustes.md) | Carpeta, formato, nombre, subtitulos, cookies, tema |
+| [Primeros pasos]({% link _guides/primeros-pasos.md %}) | Pegar un enlace, buscarlo y mandarlo a bajar |
+| [Buscar]({% link _guides/buscar.md %}) | La ficha: formatos, capitulos, metadatos, subtitulos |
+| [La cola]({% link _guides/cola.md %}) | Progreso, cancelar, reintentar, volver a bajar, abrir carpeta |
+| [Ajustes]({% link _guides/ajustes.md %}) | Carpeta, formato, nombre, subtitulos, cookies, tema |
 
 Las capturas se tomaron en una sesion real: el video de prueba es
 `https://archive.org/details/0.03-orange` (unos 16 KB, alcanza para ver

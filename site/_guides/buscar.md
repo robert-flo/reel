@@ -1,9 +1,15 @@
+---
+title: Buscar
+description: La ficha: formatos, capitulos, metadatos, subtitulos.
+nav_order: 2
+---
+
 # Buscar y la ficha
 
 Despues de `buscar`, reel pinta lo que encontro **antes** de bajar nada.
 Asi podes elegir calidad, audio, o una lista, sin comprometerte.
 
-![Ficha del video con formatos y el boton descargar](images/ficha.png)
+![Ficha del video con formatos y el boton descargar]({{ '/images/ficha.png' | relative_url }})
 
 ## Que hay en la ficha
 
@@ -16,7 +22,7 @@ Asi podes elegir calidad, audio, o una lista, sin comprometerte.
   `cookies del navegador`. Encendidas se leen mas claras.
 - A la derecha, `descargar`.
 
-El formato que queda marcado es el mismo que en [ajustes](ajustes.md).
+El formato que queda marcado es el mismo que en [ajustes]({% link _guides/ajustes.md %}).
 Si la ultima vez bajaste en `mp3`, arranca en `mp3`.
 
 ## Los formatos
@@ -62,5 +68,5 @@ lista queda arriba como resumen. Si un video falla, los demas siguen.
 No hay captura de una lista en estas guias: no se abrio un enlace de
 playlist en la sesion de las fotos.
 
-Cuando apretas `descargar`, el trabajo entra a [la cola](cola.md). La
+Cuando apretas `descargar`, el trabajo entra a [la cola]({% link _guides/cola.md %}). La
 ficha se queda, por si queres encolar otra calidad del mismo enlace.

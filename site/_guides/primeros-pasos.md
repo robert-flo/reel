@@ -41,4 +41,4 @@ y no se puede apretar de nuevo.
 ![El boton buscar dice leyendo]({{ '/images/leyendo-enlace.png' | relative_url }})
 
 Cuando termina, aparece la ficha. Ahi elegis el formato y recien ahi
-mandas a descargar. Sigue en [buscar](buscar.md).
+mandas a descargar. Sigue en [buscar]({% link _guides/buscar.md %}).
