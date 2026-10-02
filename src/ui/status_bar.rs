@@ -20,6 +20,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .inner_margin(egui::Margin::symmetric(Metrics::GUTTER as i8, 0)),
         )
         .show(ui, |ui| {
+            let total_w = ui.available_width();
             ui.horizontal_centered(|ui| {
                 let dir_hit = ui
                     .add(
@@ -39,11 +40,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     update_corner(app, ui);
-                    if ui.available_width() > 220.0 {
+                    if total_w >= 500.0 {
                         ui.add_space(16.0);
                         herramientas_corner(app, ui);
                     }
-                    if ui.available_width() > 140.0 {
+                    if total_w >= 680.0 {
                         ui.add_space(16.0);
                         ui.label(caption(app.theme_label(), &palette));
                     }

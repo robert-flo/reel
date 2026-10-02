@@ -2111,4 +2111,51 @@ mod tests {
         });
         out.textures_delta.clear();
     }
+
+    #[test]
+    fn cola_en_ventana_estrecha_dibuja_filas_con_errores_largos() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        {
+            let mut q = app.backend.queue.lock().unwrap();
+            let id1 = q.push_ready(
+                "https://ejemplo.test/1".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Atai Barkai - Video con titulo muy largo para probar truncado".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id1).unwrap().state = crate::backend::State::Failed {
+                reason: "Unable to rename file: [Errno 2] No such file or directory: '/tmp/video.part-Frag2.part' -> '/tmp/video.part-Frag2'".into(),
+            };
+
+            let id2 = q.push_ready(
+                "https://ejemplo.test/2".into(),
+                crate::backend::Options::default(),
+                crate::backend::Media {
+                    title: "Otro video terminado".into(),
+                    ..Default::default()
+                },
+            );
+            q.get_mut(id2).unwrap().state = crate::backend::State::Done {
+                path: "/tmp/video.mp4".into(),
+            };
+        }
+
+        let raw_narrow = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(420.0, 500.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw_narrow, |ui| {
+            app.ui(ui);
+        });
+        out.textures_delta.clear();
+    }
 }

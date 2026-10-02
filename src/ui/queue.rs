@@ -41,6 +41,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .filter_map(|j| j.speed)
         .sum();
 
+    let is_compact_header = ui.available_width() < 520.0;
     ui.horizontal(|ui| {
         ui.label(text(tr.queue, 11.0, Weight::SemiBold, palette.dim));
         if total_speed > 0.0 {
@@ -124,92 +125,49 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
         }
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if active > 1 {
-                let hit_cancelar = ui
-                    .add(
-                        egui::Label::new(text(
-                            format!("{} ({active})", tr.cancel_active),
-                            11.0,
-                            Weight::Regular,
-                            palette.dim,
-                        ))
-                        .sense(egui::Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if hit_cancelar.clicked() {
-                    cancelar_activas = true;
-                }
-                ui.add_space(10.0);
-            }
-
-            if failed_or_cancelled > 0 {
-                let hit_reintentar = ui
-                    .add(
-                        egui::Label::new(text(
-                            format!("{} ({failed_or_cancelled})", tr.retry_failed),
-                            11.0,
-                            Weight::Regular,
-                            palette.dim,
-                        ))
-                        .sense(egui::Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if hit_reintentar.clicked() {
-                    reintentar_todo = Some(());
-                }
-                ui.add_space(10.0);
-            }
-
-            if inactive > 0 {
-                let hit_limpiar = ui
-                    .add(
-                        egui::Label::new(text(
-                            tr.clear_finished,
-                            11.0,
-                            Weight::Regular,
-                            palette.dim,
-                        ))
-                        .sense(egui::Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if hit_limpiar.clicked() {
-                    limpiar_terminadas = true;
-                }
-                ui.add_space(10.0);
-            }
-
-            let urls_con_contenido = jobs.iter().filter(|j| !j.url.is_empty()).count();
-            if urls_con_contenido > 1 {
-                let hit_copiar_todos = ui
-                    .add(
-                        egui::Label::new(text(
-                            tr.copy_all_links,
-                            11.0,
-                            Weight::Regular,
-                            palette.dim,
-                        ))
-                        .sense(egui::Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text(tr.copy_all_links_tip);
-                if hit_copiar_todos.clicked() {
-                    actions.copiar_texto = Some(app.queue_urls_text());
-                }
-                ui.add_space(10.0);
-            }
-
-            if jobs.len() <= 1 {
-                let mut status_parts = Vec::new();
-                status_parts.push(tr.counted(active, tr.active_one, tr.active_many));
-                status_parts.push(tr.counted(done, tr.completed_one, tr.completed_many));
-                if failed > 0 {
-                    status_parts.push(tr.counted(failed, tr.failed_one, tr.failed_many));
-                }
-                ui.label(caption(status_parts.join("  ·  "), &palette));
-            }
-        });
+        if !is_compact_header {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                render_header_actions(
+                    ui,
+                    app,
+                    &palette,
+                    tr,
+                    active,
+                    done,
+                    failed,
+                    failed_or_cancelled,
+                    inactive,
+                    &jobs,
+                    &mut cancelar_activas,
+                    &mut reintentar_todo,
+                    &mut limpiar_terminadas,
+                    &mut actions,
+                );
+            });
+        }
     });
+
+    if is_compact_header {
+        ui.add_space(4.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            render_header_actions(
+                ui,
+                app,
+                &palette,
+                tr,
+                active,
+                done,
+                failed,
+                failed_or_cancelled,
+                inactive,
+                &jobs,
+                &mut cancelar_activas,
+                &mut reintentar_todo,
+                &mut limpiar_terminadas,
+                &mut actions,
+            );
+        });
+    }
 
     ui.add_space(8.0);
 
@@ -418,233 +376,249 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
         .corner_radius(CornerRadius::same(Metrics::RADIUS))
         .inner_margin(egui::Margin::symmetric(18, 14))
         .show(ui, |ui| {
+            // Linea 1: Titulo a la izquierda (acotado al ancho disponible) y Estado a la derecha
             ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    let title = if job.media.title.is_empty() {
-                        tr.untitled.to_string()
-                    } else {
-                        job.media.title.clone()
-                    };
-                    let es_listo = matches!(job.state, State::Done { .. });
-                    let mut title_label =
-                        egui::Label::new(text(&title, 13.0, Weight::SemiBold, palette.text))
-                            .truncate();
-                    if es_listo {
-                        title_label = title_label.sense(egui::Sense::click());
-                    }
-                    let resp = ui.add(title_label).on_hover_text(&title);
-                    if es_listo {
-                        let resp = resp
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(tr.open);
-                        if resp.double_clicked() {
-                            if let State::Done { path } = &job.state {
-                                if Path::new(path).is_file() {
-                                    actions.abrir_archivo = Some(path.clone());
-                                } else {
-                                    actions.abrir_carpeta =
-                                        Some((path.clone(), job.options.output_dir.clone()));
-                                }
+                let status_w = ui
+                    .painter()
+                    .layout_no_wrap(status.clone(), Weight::Medium.font_id(11.0), status_color)
+                    .rect
+                    .width();
+                let status_text = text(status, 11.0, Weight::Medium, status_color);
+
+                let title = if job.media.title.is_empty() {
+                    tr.untitled.to_string()
+                } else {
+                    job.media.title.clone()
+                };
+                let es_listo = matches!(job.state, State::Done { .. });
+                let avail_for_title = (ui.available_width() - status_w - 12.0).max(60.0);
+
+                let mut title_label =
+                    egui::Label::new(text(&title, 13.0, Weight::SemiBold, palette.text)).truncate();
+                if es_listo {
+                    title_label = title_label.sense(egui::Sense::click());
+                }
+                let resp = ui
+                    .add_sized([avail_for_title, 18.0], title_label)
+                    .on_hover_text(&title);
+                if es_listo {
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(tr.open);
+                    if resp.double_clicked() {
+                        if let State::Done { path } = &job.state {
+                            if Path::new(path).is_file() {
+                                actions.abrir_archivo = Some(path.clone());
+                            } else {
+                                actions.abrir_carpeta =
+                                    Some((path.clone(), job.options.output_dir.clone()));
                             }
                         }
                     }
-                    ui.add_space(4.0);
-                    ui.label(caption(job_format_label(job, tr), &palette));
-                });
+                }
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                    ui.vertical(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                            if job.is_active() {
-                                let hit = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.cancel,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit.clicked() {
-                                    actions.cancel = Some(job.id);
-                                }
-                                ui.add_space(10.0);
-                            }
-                            // Un trabajo que ya no corre se puede volver a
-                            // pedir; al reintentar, yt-dlp reanuda el `.part`.
-                            if !job.is_active() {
-                                let hit = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.retry,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit.clicked() {
-                                    actions.retry = Some(job.id);
-                                }
-                                ui.add_space(10.0);
-                            }
-                            // Un archivo que ya esta no se vuelve a bajar al
-                            // reintentar; volver a bajar solo aplica a videos
-                            // sueltos, no a la fila resumen de una lista.
-                            if !job.options.playlist
-                                && matches!(job.state, State::Done { .. })
-                                && !job.options.force
-                            {
-                                let hit = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.redownload,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit.clicked() {
-                                    actions.retry_forzado = Some(job.id);
-                                }
-                                ui.add_space(10.0);
-                            }
-                            // Un trabajo listo ofrece abrir el archivo o la carpeta.
-                            if let State::Done { path } = &job.state {
-                                let es_archivo_real = Path::new(path).is_file();
-                                if es_archivo_real {
-                                    let hit_copiar = ui
-                                        .add(
-                                            egui::Label::new(text(
-                                                tr.copy_path,
-                                                11.0,
-                                                Weight::Regular,
-                                                palette.dim,
-                                            ))
-                                            .sense(egui::Sense::click()),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if hit_copiar.clicked() {
-                                        actions.copiar_texto = Some(path.clone());
-                                    }
-                                    ui.add_space(10.0);
-
-                                    let hit_carpeta = ui
-                                        .add(
-                                            egui::Label::new(text(
-                                                tr.folder,
-                                                11.0,
-                                                Weight::Regular,
-                                                palette.dim,
-                                            ))
-                                            .sense(egui::Sense::click()),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if hit_carpeta.clicked() {
-                                        actions.abrir_carpeta =
-                                            Some((path.clone(), job.options.output_dir.clone()));
-                                    }
-                                    ui.add_space(10.0);
-
-                                    let hit_abrir = ui
-                                        .add(
-                                            egui::Label::new(text(
-                                                tr.open,
-                                                11.0,
-                                                Weight::Regular,
-                                                palette.dim,
-                                            ))
-                                            .sense(egui::Sense::click()),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if hit_abrir.clicked() {
-                                        actions.abrir_archivo = Some(path.clone());
-                                    }
-                                    ui.add_space(10.0);
-                                } else {
-                                    let hit_carpeta = ui
-                                        .add(
-                                            egui::Label::new(text(
-                                                tr.open_folder,
-                                                11.0,
-                                                Weight::Regular,
-                                                palette.dim,
-                                            ))
-                                            .sense(egui::Sense::click()),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if hit_carpeta.clicked() {
-                                        actions.abrir_carpeta =
-                                            Some((path.clone(), job.options.output_dir.clone()));
-                                    }
-                                    ui.add_space(10.0);
-                                }
-                            }
-                            if let State::Failed { reason } = &job.state {
-                                let hit_copiar = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.copy_error,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit_copiar.clicked() {
-                                    actions.copiar_texto = Some(reason.clone());
-                                }
-                                ui.add_space(10.0);
-                            }
-                            // Copiar enlace original del video/audio
-                            if !job.media.url.is_empty() {
-                                let hit_url = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.copy_url,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit_url.clicked() {
-                                    actions.copiar_texto = Some(job.media.url.clone());
-                                }
-                                ui.add_space(10.0);
-                            }
-                            // Quitar trabajo inactivo de la cola
-                            if !job.is_active() {
-                                let hit_quitar = ui
-                                    .add(
-                                        egui::Label::new(text(
-                                            tr.remove,
-                                            11.0,
-                                            Weight::Regular,
-                                            palette.dim,
-                                        ))
-                                        .sense(egui::Sense::click()),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if hit_quitar.clicked() {
-                                    actions.quitar = Some(job.id);
-                                }
-                                ui.add_space(10.0);
-                            }
-                            ui.label(text(status, 11.0, Weight::Medium, status_color));
-                        });
-                        ui.add_space(4.0);
-                        ui.label(caption(detail, &palette));
-                    });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(status_text);
                 });
             });
+
+            // Linea 2: Formato a la izquierda y Acciones a la derecha
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(caption(job_format_label(job, tr), &palette));
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if job.is_active() {
+                        let hit = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.cancel,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit.clicked() {
+                            actions.cancel = Some(job.id);
+                        }
+                        ui.add_space(10.0);
+                    }
+                    // Un trabajo que ya no corre se puede volver a
+                    // pedir; al reintentar, yt-dlp reanuda el `.part`.
+                    if !job.is_active() {
+                        let hit = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.retry,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit.clicked() {
+                            actions.retry = Some(job.id);
+                        }
+                        ui.add_space(10.0);
+                    }
+                    // Un archivo que ya esta no se vuelve a bajar al
+                    // reintentar; volver a bajar solo aplica a videos
+                    // sueltos, no a la fila resumen de una lista.
+                    if !job.options.playlist
+                        && matches!(job.state, State::Done { .. })
+                        && !job.options.force
+                    {
+                        let hit = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.redownload,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit.clicked() {
+                            actions.retry_forzado = Some(job.id);
+                        }
+                        ui.add_space(10.0);
+                    }
+                    // Un trabajo listo ofrece abrir el archivo o la carpeta.
+                    if let State::Done { path } = &job.state {
+                        let es_archivo_real = Path::new(path).is_file();
+                        if es_archivo_real {
+                            let hit_copiar = ui
+                                .add(
+                                    egui::Label::new(text(
+                                        tr.copy_path,
+                                        11.0,
+                                        Weight::Regular,
+                                        palette.dim,
+                                    ))
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if hit_copiar.clicked() {
+                                actions.copiar_texto = Some(path.clone());
+                            }
+                            ui.add_space(10.0);
+
+                            let hit_carpeta = ui
+                                .add(
+                                    egui::Label::new(text(
+                                        tr.folder,
+                                        11.0,
+                                        Weight::Regular,
+                                        palette.dim,
+                                    ))
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if hit_carpeta.clicked() {
+                                actions.abrir_carpeta =
+                                    Some((path.clone(), job.options.output_dir.clone()));
+                            }
+                            ui.add_space(10.0);
+
+                            let hit_abrir = ui
+                                .add(
+                                    egui::Label::new(text(
+                                        tr.open,
+                                        11.0,
+                                        Weight::Regular,
+                                        palette.dim,
+                                    ))
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if hit_abrir.clicked() {
+                                actions.abrir_archivo = Some(path.clone());
+                            }
+                            ui.add_space(10.0);
+                        } else {
+                            let hit_carpeta = ui
+                                .add(
+                                    egui::Label::new(text(
+                                        tr.open_folder,
+                                        11.0,
+                                        Weight::Regular,
+                                        palette.dim,
+                                    ))
+                                    .sense(egui::Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if hit_carpeta.clicked() {
+                                actions.abrir_carpeta =
+                                    Some((path.clone(), job.options.output_dir.clone()));
+                            }
+                            ui.add_space(10.0);
+                        }
+                    }
+                    if let State::Failed { reason } = &job.state {
+                        let hit_copiar = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.copy_error,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_copiar.clicked() {
+                            actions.copiar_texto = Some(reason.clone());
+                        }
+                        ui.add_space(10.0);
+                    }
+                    // Copiar enlace original del video/audio
+                    if !job.media.url.is_empty() {
+                        let hit_url = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.copy_url,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_url.clicked() {
+                            actions.copiar_texto = Some(job.media.url.clone());
+                        }
+                        ui.add_space(10.0);
+                    }
+                    // Quitar trabajo inactivo de la cola
+                    if !job.is_active() {
+                        let hit_quitar = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.remove,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_quitar.clicked() {
+                            actions.quitar = Some(job.id);
+                        }
+                        ui.add_space(10.0);
+                    }
+                });
+            });
+
+            // Linea 3: Detalle / Mensaje de error / Progreso (a ancho completo)
+            if !detail.is_empty() {
+                ui.add_space(6.0);
+                ui.label(caption(&detail, &palette));
+            }
 
             ui.add_space(10.0);
             progress_bar(ui, job.progress, bar_color, &palette);
@@ -694,4 +668,96 @@ fn empty(ui: &mut egui::Ui, app: &App) {
         ui.add_space(6.0);
         ui.label(caption(tr.empty_hint, &palette));
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_header_actions(
+    ui: &mut egui::Ui,
+    app: &App,
+    palette: &crate::palette::Palette,
+    tr: &crate::i18n::Catalog,
+    active: usize,
+    done: usize,
+    failed: usize,
+    failed_or_cancelled: usize,
+    inactive: usize,
+    jobs: &[crate::backend::Job],
+    cancelar_activas: &mut bool,
+    reintentar_todo: &mut Option<()>,
+    limpiar_terminadas: &mut bool,
+    actions: &mut RowActions,
+) {
+    if active > 1 {
+        let hit_cancelar = ui
+            .add(
+                egui::Label::new(text(
+                    format!("{} ({active})", tr.cancel_active),
+                    11.0,
+                    Weight::Regular,
+                    palette.dim,
+                ))
+                .sense(egui::Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if hit_cancelar.clicked() {
+            *cancelar_activas = true;
+        }
+        ui.add_space(10.0);
+    }
+
+    if failed_or_cancelled > 0 {
+        let hit_reintentar = ui
+            .add(
+                egui::Label::new(text(
+                    format!("{} ({failed_or_cancelled})", tr.retry_failed),
+                    11.0,
+                    Weight::Regular,
+                    palette.dim,
+                ))
+                .sense(egui::Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if hit_reintentar.clicked() {
+            *reintentar_todo = Some(());
+        }
+        ui.add_space(10.0);
+    }
+
+    if inactive > 0 {
+        let hit_limpiar = ui
+            .add(
+                egui::Label::new(text(tr.clear_finished, 11.0, Weight::Regular, palette.dim))
+                    .sense(egui::Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if hit_limpiar.clicked() {
+            *limpiar_terminadas = true;
+        }
+        ui.add_space(10.0);
+    }
+
+    let urls_con_contenido = jobs.iter().filter(|j| !j.url.is_empty()).count();
+    if urls_con_contenido > 1 {
+        let hit_copiar_todos = ui
+            .add(
+                egui::Label::new(text(tr.copy_all_links, 11.0, Weight::Regular, palette.dim))
+                    .sense(egui::Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(tr.copy_all_links_tip);
+        if hit_copiar_todos.clicked() {
+            actions.copiar_texto = Some(app.queue_urls_text());
+        }
+        ui.add_space(10.0);
+    }
+
+    if jobs.len() <= 1 {
+        let mut status_parts = Vec::new();
+        status_parts.push(tr.counted(active, tr.active_one, tr.active_many));
+        status_parts.push(tr.counted(done, tr.completed_one, tr.completed_many));
+        if failed > 0 {
+            status_parts.push(tr.counted(failed, tr.failed_one, tr.failed_many));
+        }
+        ui.label(caption(status_parts.join("  ·  "), palette));
+    }
 }
