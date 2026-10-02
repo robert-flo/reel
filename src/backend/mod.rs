@@ -149,6 +149,10 @@ pub struct Options {
     /// El enlace es una lista: en vez de bajarla entera como un trabajo, se
     /// expande a una fila por video. La fila de la lista queda como resumen.
     pub playlist: bool,
+    /// Indice especifico dentro de una lista o publicacion multi-video (1-indexado).
+    /// Se pasa a yt-dlp con `--playlist-items` para evitar que multiples videos
+    /// de una misma publicacion (ej: tweets) se descarguen en paralelo pisandose archivos temporales.
+    pub playlist_item: Option<usize>,
     /// Volver a bajar aunque el archivo ya este en la carpeta.
     ///
     /// yt-dlp saltea un archivo que existe, tambien al reintentar, asi que un
@@ -174,6 +178,7 @@ impl Default for Options {
             extra_args: None,
             download_sections: None,
             playlist: false,
+            playlist_item: None,
             force: false,
         }
     }
@@ -262,6 +267,7 @@ impl Job {
 
 /// Lo que la interfaz le pide al worker.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Solo leer el enlace para pintar la ficha. No crea trabajo ni descarga
     /// nada: el usuario todavia tiene que elegir formato.
@@ -431,6 +437,80 @@ mod queue_tests {
         assert!(queue.jobs.is_empty());
         assert!(!queue.remove(999), "no quita ids inexistentes");
     }
+
+    #[test]
+    fn expansion_con_urls_compartidas_asigna_playlist_item() {
+        let mut queue = Queue::default();
+        let options = Options {
+            playlist: true,
+            ..Options::default()
+        };
+        let id = queue.push_ready(
+            "https://x.com/autor/status/123".into(),
+            options,
+            Media {
+                title: "Tweet con 2 videos".into(),
+                playlist_count: Some(2),
+                ..Media::default()
+            },
+        );
+        let videos = vec![
+            Media {
+                title: "Video 1".into(),
+                url: "https://x.com/autor/status/123".into(),
+                ..Media::default()
+            },
+            Media {
+                title: "Video 2".into(),
+                url: "https://x.com/autor/status/123".into(),
+                ..Media::default()
+            },
+        ];
+        queue.expandir_lista(id, videos, None);
+
+        assert_eq!(queue.jobs.len(), 3);
+        let hijos: Vec<&Job> = queue.jobs.iter().filter(|j| j.id != id).collect();
+        assert_eq!(hijos.len(), 2);
+        assert_eq!(hijos[0].options.playlist_item, Some(1));
+        assert_eq!(hijos[1].options.playlist_item, Some(2));
+    }
+
+    #[test]
+    fn expansion_con_urls_distintas_no_asigna_playlist_item() {
+        let mut queue = Queue::default();
+        let options = Options {
+            playlist: true,
+            ..Options::default()
+        };
+        let id = queue.push_ready(
+            "https://youtube.com/playlist?list=abc".into(),
+            options,
+            Media {
+                title: "Playlist youtube".into(),
+                playlist_count: Some(2),
+                ..Media::default()
+            },
+        );
+        let videos = vec![
+            Media {
+                title: "Video 1".into(),
+                url: "https://youtube.com/watch?v=1".into(),
+                ..Media::default()
+            },
+            Media {
+                title: "Video 2".into(),
+                url: "https://youtube.com/watch?v=2".into(),
+                ..Media::default()
+            },
+        ];
+        queue.expandir_lista(id, videos, None);
+
+        assert_eq!(queue.jobs.len(), 3);
+        let hijos: Vec<&Job> = queue.jobs.iter().filter(|j| j.id != id).collect();
+        assert_eq!(hijos.len(), 2);
+        assert_eq!(hijos[0].options.playlist_item, None);
+        assert_eq!(hijos[1].options.playlist_item, None);
+    }
 }
 
 #[cfg(feature = "selfcheck")]
@@ -482,7 +562,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --fail) fallar=1; shift ;;
     -P) carpeta="$2"; shift 2 ;;
-    -o|--progress-template|--print|-f|--merge-output-format|--audio-format|--audio-quality|--sub-langs|--cookies-from-browser) shift 2 ;;
+    -o|--progress-template|--print|-f|--merge-output-format|--audio-format|--audio-quality|--sub-langs|--cookies-from-browser|--playlist-items) shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -1595,6 +1675,10 @@ impl Queue {
         id
     }
 
+    pub fn get(&self, id: u64) -> Option<&Job> {
+        self.jobs.iter().find(|j| j.id == id)
+    }
+
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Job> {
         self.jobs.iter_mut().find(|j| j.id == id)
     }
@@ -1636,20 +1720,32 @@ impl Queue {
             return;
         }
 
-        let Some(job) = self.get_mut(id) else {
-            return;
+        let (mut options, parent_url) = match self.get(id) {
+            Some(job) => (job.options.clone(), job.url.clone()),
+            None => return,
         };
-        let mut options = job.options.clone();
         // Sin esto cada video intentaria expandir su propia lista.
         options.playlist = false;
 
+        let urls: Vec<String> = videos.iter().map(|v| v.url.clone()).collect();
         let mut ids = Vec::new();
-        for video in videos {
+        for (i, video) in videos.into_iter().enumerate() {
             let url = video.url.clone();
             if url.is_empty() {
                 continue;
             }
-            ids.push(self.push_ready(url, options.clone(), video));
+            let mut opts = options.clone();
+            // Si las entradas comparten URL entre si o con el trabajo padre (ej: tweet
+            // con multiples videos o post donde cada video no tiene url propia), cada
+            // trabajo hijo debe bajar solo su indice (--playlist-items i). De lo contrario,
+            // yt-dlp bajaria todos los videos del post en cada trabajo en paralelo,
+            // pisandose los archivos temporales y fallando.
+            let compartida = urls.len() > 1
+                && (url == parent_url || urls.iter().enumerate().any(|(j, u)| j != i && u == &url));
+            if compartida {
+                opts.playlist_item = Some(i + 1);
+            }
+            ids.push(self.push_ready(url, opts, video));
         }
 
         let cuantos = ids.len();

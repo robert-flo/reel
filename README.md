@@ -41,7 +41,10 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   subtitulos y tema en `~/.config/reel/settings.json`, y el formato y el tema
   se reponen al arrancar.
 - **Las listas se expanden a una fila por video**, con `--flat-playlist`.
-  Verificado con una lista real de 19 videos.
+  Verificado con una lista real de 19 videos. En publicaciones con múltiples
+  videos compartiendo URL (como tweets o carruseles), cada fila hija descarga
+  su índice individual con `--playlist-items`, evitando que se ejecuten en
+  paralelo sobre los mismos archivos temporales y choquen en postprocesado.
 - **Una sola instancia**: la segunda le pasa su pedido a la que corre. Sin esto
   dos copias peleaban por el icono de bandeja y por `app.ron`.
 - **Avisa al terminar la cola** por `notify-send`.

@@ -638,6 +638,11 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         "after_move:DONE|%(filepath)s".into(),
     ];
 
+    if let Some(item) = options.playlist_item {
+        args.push("--playlist-items".into());
+        args.push(item.to_string());
+    }
+
     // Bajar de nuevo aunque el archivo exista. Solo cuando se pidio: es la
     // recuperacion de un archivo truncado, no lo que hace un reintento normal.
     if options.force {
@@ -1480,5 +1485,16 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--download-sections"));
         assert!(args.iter().any(|arg| arg == "*01:30-03:45"));
         assert!(args.iter().any(|arg| arg == "--force-keyframes-at-cuts"));
+    }
+
+    #[test]
+    fn la_descarga_lleva_playlist_item() {
+        let options = Options {
+            playlist_item: Some(2),
+            ..Options::default()
+        };
+        let (args, _) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--playlist-items"));
+        assert!(args.iter().any(|arg| arg == "2"));
     }
 }
