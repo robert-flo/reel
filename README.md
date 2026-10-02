@@ -11,7 +11,7 @@ soporta 1800 y pico de sitios, asi que esto no es solo YouTube.
 > ajustes y la cola concurrente estan puestos y probados contra yt-dlp de
 > verdad. Todavia no hay releases.
 
-Tutoriales con capturas reales de la ventana: [`docs/`](docs/README.md).
+Tutoriales con capturas reales de la ventana: <https://robert-flo.github.io/reel>.
 
 ## Estado
 
