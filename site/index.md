@@ -19,15 +19,15 @@ features:
     title: Buscar
     details: "La ficha del enlace: formatos, capitulos, metadatos y subtitulos, antes de bajar nada."
     link: /buscar/
-    link_text: "Ver guia"
+    link_text: "Ver guía"
   - icon: ☰
     title: La cola
     details: "Hasta tres a la vez, con progreso, cancelar, reintentar y volver a bajar."
     link: /cola/
-    link_text: "Ver guia"
+    link_text: "Ver guía"
   - icon: ⚙
     title: Ajustes
     details: "Carpeta, formato, nombre, subtitulos, cookies y tema, guardados en disco."
     link: /ajustes/
-    link_text: "Ver guia"
+    link_text: "Ver guía"
 ---
