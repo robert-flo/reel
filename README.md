@@ -130,6 +130,11 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Exportación masiva de enlaces (`copiar enlaces`)**: botón en la cabecera cuando hay múltiples
   elementos en la cola para copiar al portapapeles todas las URLs (separadas por saltos de línea),
   permitiendo exportar o compartir rápidamente la lista de reproducción o cola de trabajo.
+- **Sincronización de fotogramas Wayland/Hyprland sin bloqueos**: parche de `egui`/`winit` del
+  ecosistema Fastframe para evitar que la ventana se bloquee en `SwapBuffers` cuando se abre
+  en un espacio de trabajo en segundo plano o inactivo, previniendo el error "Application Not Responding".
+- **Aislamiento de bandeja en pruebas**: las pruebas unitarias ya no instancian iconos en el área
+  de notificación (D-Bus StatusNotifierItem), evitando saturar la barra o dock de Omarchy.
 
 ### Falta
 

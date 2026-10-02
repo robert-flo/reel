@@ -153,7 +153,9 @@ impl App {
         let settings = settings::Settings::load();
         let tr = settings.language.catalog();
 
-        let tray = {
+        let tray = if cfg!(test) {
+            None
+        } else {
             let waker = waker.clone();
             fastframe_tray::Tray::spawn(
                 fastframe_tray::Config {

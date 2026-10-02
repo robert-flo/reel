@@ -51,3 +51,24 @@ selfcheck = []
 [profile.release]
 lto = "thin"
 strip = true
+
+# Optimiza dependencias en desarrollo para evitar tirones y retardos de interfaz.
+[profile.dev.package."*"]
+opt-level = 2
+
+[patch.crates-io]
+# crmne/egui apps-0.36 and crmne/winit apps-0.30, the revisions ZapFast 0.18.2
+# and Spotifast 0.11.2 pin: Wayland frame pacing by compositor callbacks (a
+# hidden window never blocks in a vsync swap under Hyprland), egui's busy-loop
+# fix, and winit's Occluded state. Move all pins together with those apps.
+ecolor = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+eframe = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui-wgpu = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui-winit = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui_extras = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui_glow = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+emath = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+epaint = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+epaint_default_fonts = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+winit = { git = "https://github.com/crmne/winit", rev = "544a73716c7a54c916d97d6c86c0b1bdaa81234e" }
