@@ -15,12 +15,36 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let tr = app.tr();
     if app.probing && app.preview.is_none() {
-        ui.label(caption(tr.reading_link, &palette));
+        egui::Frame::new()
+            .fill(palette.panel)
+            .stroke(Stroke::new(1.0, palette.outline))
+            .corner_radius(CornerRadius::same(Metrics::RADIUS))
+            .inner_margin(egui::Margin::symmetric(18, 14))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.add_space(8.0);
+                    ui.label(text(tr.reading_link, 13.0, Weight::Regular, palette.dim));
+                });
+            });
         ui.add_space(Metrics::GAP);
         return;
     }
 
     if let Some(reason) = app.preview_error.clone() {
+        let consejo = crate::backend::ytdlp::consejo_para(&reason);
+        let is_no_media = consejo == Some(crate::backend::ytdlp::Consejo::NoMedia);
+        let headline = if is_no_media {
+            tr.no_media_found
+        } else {
+            tr.could_not_read
+        };
+        let tip = match consejo {
+            Some(crate::backend::ytdlp::Consejo::NoMedia) => None,
+            Some(c) => Some(tr.consejo(c)),
+            None => None,
+        };
+
         egui::Frame::new()
             .fill(palette.panel)
             .stroke(Stroke::new(1.0, palette.outline))
@@ -29,16 +53,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(text(
-                            tr.could_not_read,
-                            13.0,
-                            Weight::Medium,
-                            palette.danger,
-                        ));
-                        ui.add_space(4.0);
-                        ui.label(caption(&reason, &palette));
+                        ui.label(text(headline, 13.0, Weight::Medium, palette.danger));
+                        if let Some(tip_text) = tip {
+                            ui.add_space(4.0);
+                            ui.label(caption(tip_text, &palette));
+                        }
+                        if reason != headline {
+                            ui.add_space(4.0);
+                            ui.label(caption(&reason, &palette));
+                        }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let hit_dismiss = ui
+                            .add(
+                                egui::Label::new(text(
+                                    tr.dismiss,
+                                    11.0,
+                                    Weight::Regular,
+                                    palette.dim,
+                                ))
+                                .sense(Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit_dismiss.clicked() {
+                            app.preview_error = None;
+                        }
+
+                        ui.add_space(10.0);
+
                         let hit_copy = ui
                             .add(
                                 egui::Label::new(text(

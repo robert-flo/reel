@@ -95,7 +95,9 @@ i18n_strings! {
 
     reading_link: { en: "reading the link...", es: "leyendo el enlace..." }
     could_not_read: { en: "couldn't read that link", es: "no pude leer ese enlace" }
+    no_media_found: { en: "no media found in this link", es: "no se encontraron archivos multimedia en el enlace" }
     copy_error: { en: "copy error", es: "copiar error" }
+    dismiss: { en: "dismiss", es: "descartar" }
     untitled: { en: "Untitled", es: "Sin título" }
     playlist_prefix: { en: "playlist:", es: "es una lista:" }
     video_one: { en: "video", es: "video" }
@@ -236,6 +238,7 @@ i18n_strings! {
     tip_unavailable: { en: "This video is no longer available.", es: "El video ya no está disponible en el sitio." }
     tip_format: { en: "That format isn't available for this video: pick another.", es: "Ese formato no existe para este video: elige otro." }
     tip_timeout: { en: "The connection timed out: retrying usually works.", es: "Se cortó la conexión: reintentar suele alcanzar." }
+    tip_no_media: { en: "No multimedia files were found in this link.", es: "No se encontraron archivos multimedia en el enlace." }
 }
 
 impl Catalog {
@@ -336,6 +339,7 @@ impl Catalog {
             crate::backend::ytdlp::Consejo::Unavailable => self.tip_unavailable,
             crate::backend::ytdlp::Consejo::FormatMissing => self.tip_format,
             crate::backend::ytdlp::Consejo::Timeout => self.tip_timeout,
+            crate::backend::ytdlp::Consejo::NoMedia => self.tip_no_media,
         }
     }
 

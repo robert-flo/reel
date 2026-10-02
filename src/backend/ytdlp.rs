@@ -466,6 +466,16 @@ pub(crate) fn probe(url: &str) -> Result<Media, String> {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("yt-dlp devolvio algo que no pude leer: {error}"))?;
 
+    let is_playlist = json["_type"].as_str() == Some("playlist")
+        || json["entries"].as_array().is_some_and(|e| !e.is_empty());
+    let has_formats = json["formats"].as_array().is_some_and(|f| !f.is_empty())
+        || json["url"].as_str().is_some()
+        || json["direct"].as_bool().unwrap_or(false);
+
+    if !is_playlist && !has_formats && json["duration"].as_f64().is_none() {
+        return Err("no se encontraron archivos multimedia en el enlace".to_string());
+    }
+
     Ok(media_from_json(&json))
 }
 
@@ -887,6 +897,7 @@ pub enum Consejo {
     Unavailable,
     FormatMissing,
     Timeout,
+    NoMedia,
 }
 
 /// Que hacer con un error que se repite. Devuelve `None` cuando no hay nada
@@ -912,6 +923,19 @@ pub(crate) fn consejo_para(error: &str) -> Option<Consejo> {
     }
     if texto.contains("timed out") || texto.contains("timeout") {
         return Some(Consejo::Timeout);
+    }
+    if texto.contains("unsupported url")
+        || texto.contains("no video")
+        || texto.contains("no media")
+        || texto.contains("there's no video")
+        || texto.contains("does not contain any video")
+        || texto.contains("doesn't contain any video")
+        || texto.contains("not a valid url")
+        || texto.contains("is not a valid url")
+        || texto.contains("none of the url")
+        || texto.contains("no se encontraron archivos multimedia")
+    {
+        return Some(Consejo::NoMedia);
     }
     None
 }
@@ -1245,6 +1269,19 @@ mod tests {
             Some(Consejo::FormatMissing)
         );
         assert_eq!(consejo_para("connection timed out"), Some(Consejo::Timeout));
+        assert_eq!(
+            consejo_para("ERROR: Unsupported URL: https://x.com/paolino"),
+            Some(Consejo::NoMedia)
+        );
+        assert_eq!(
+            consejo_para("ERROR: [twitter] 20: No video could be found in this tweet"),
+            Some(Consejo::NoMedia)
+        );
+        assert_eq!(consejo_para("No media found"), Some(Consejo::NoMedia));
+        assert_eq!(
+            consejo_para("no se encontraron archivos multimedia en el enlace"),
+            Some(Consejo::NoMedia)
+        );
     }
 
     /// Un error que no conocemos se deja como vino: inventar un consejo seria

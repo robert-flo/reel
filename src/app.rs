@@ -411,7 +411,7 @@ impl App {
             .show(ui, |cui| {
                 ui::url_bar::show(self, cui);
                 cui.add_space(ui::Metrics::GAP);
-                if self.preview.is_some() {
+                if self.preview.is_some() || self.preview_error.is_some() || self.probing {
                     ui::media_card::show(self, cui);
                     cui.add_space(ui::Metrics::GAP + 6.0);
                 }
@@ -471,7 +471,7 @@ impl App {
             if i.key_pressed(egui::Key::Escape) {
                 if self.settings_open {
                     self.settings_open = false;
-                } else if self.preview.is_some() || self.preview_error.is_some() {
+                } else if self.preview.is_some() || self.preview_error.is_some() || self.probing {
                     self.preview = None;
                     self.preview_url = None;
                     self.preview_error = None;
@@ -727,12 +727,12 @@ impl App {
 
     fn sync_preview(&mut self) {
         let (preview, error) = {
-            let queue = self
+            let mut queue = self
                 .backend
                 .queue
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            (queue.preview.clone(), queue.preview_error.clone())
+            (queue.preview.take(), queue.preview_error.take())
         };
 
         if let Some((url, media)) = preview {
@@ -1854,5 +1854,93 @@ mod tests {
             app.queue_urls_text(),
             "https://test.com/1\nhttps://test.com/2"
         );
+    }
+
+    #[test]
+    fn preview_error_muestra_mensaje_de_no_media() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        app.settings.language = crate::i18n::Language::Es;
+        app.preview_error = Some("ERROR: Unsupported URL: https://x.com/paolino".into());
+
+        // Debe renderizar la tarjeta de error sin fallar
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.ui(ui);
+        });
+        output.textures_delta.clear();
+
+        // Verificamos que el consejo sea NoMedia
+        let consejo = crate::backend::ytdlp::consejo_para(app.preview_error.as_ref().unwrap());
+        assert_eq!(consejo, Some(crate::backend::ytdlp::Consejo::NoMedia));
+        assert_eq!(
+            app.tr().no_media_found,
+            "no se encontraron archivos multimedia en el enlace"
+        );
+
+        // En inglés
+        app.settings.language = crate::i18n::Language::En;
+        assert_eq!(app.tr().no_media_found, "no media found in this link");
+
+        // Escape descarta el error
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        assert!(app.preview_error.is_none());
+    }
+
+    #[test]
+    fn probing_se_muestra_y_se_cancela_con_escape() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+
+        app.probing = true;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.ui(ui);
+        });
+        output.textures_delta.clear();
+        assert!(app.probing);
+
+        // Escape cancela el sondeo
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        });
+        let mut out = ctx.run_ui(input, |ui| app.handle_shortcuts(ui));
+        out.textures_delta.clear();
+        assert!(!app.probing);
+    }
+
+    #[test]
+    fn sync_preview_consume_el_error() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+
+        {
+            let mut queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            queue.preview_error = Some("error de prueba".into());
+        }
+
+        app.sync_preview();
+        assert_eq!(app.preview_error.as_deref(), Some("error de prueba"));
+
+        // queue.preview_error debió ser consumido (take)
+        let queue = app.backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(queue.preview_error.is_none());
     }
 }
