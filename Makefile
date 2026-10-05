@@ -132,7 +132,7 @@ test: ## corre las pruebas
 	cargo test --features selfcheck
 
 .PHONY: selfcheck
-selfcheck: ## pruebas de la cola con un yt-dlp falso: concurrencia, tope, cancelacion
+selfcheck: ## pruebas de la cola con un yt-dlp falso: de a uno, tope, cancelacion
 	cargo test --features selfcheck --test cola -- --test-threads=1
 
 .PHONY: selfcheck-net

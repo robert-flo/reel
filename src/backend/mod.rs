@@ -235,6 +235,13 @@ pub enum State {
     Postprocessing {
         postprocessor: String,
     },
+    /// Esperando para reintentar un 403 o 429. `attempt` es cual reintento
+    /// viene (1, 2 o 3) y `wait_ms` cuanto falta, inyectable en las pruebas.
+    Retrying {
+        reason: String,
+        attempt: u8,
+        wait_ms: u64,
+    },
     Done {
         path: String,
     },
@@ -265,7 +272,11 @@ impl Job {
     pub fn is_active(&self) -> bool {
         matches!(
             self.state,
-            State::Probing | State::Queued | State::Downloading | State::Postprocessing { .. }
+            State::Probing
+                | State::Queued
+                | State::Downloading
+                | State::Postprocessing { .. }
+                | State::Retrying { .. }
         )
     }
 }
@@ -563,11 +574,21 @@ argumentos="$*"
 carpeta="."
 url=""
 fallar=0
+no_overwrite=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --fail) fallar=1; shift ;;
-    -P) carpeta="$2"; shift 2 ;;
-    -o|--progress-template|--print|-f|--merge-output-format|--audio-format|--audio-quality|--sub-langs|--cookies-from-browser|--playlist-items) shift 2 ;;
+    --no-overwrites) no_overwrite=1; shift ;;
+    --force-overwrites) no_overwrite=0; shift ;;
+    -P)
+      case "$2" in
+        temp:*) ;;
+        *:*) ;;
+        *) carpeta="$2" ;;
+      esac
+      shift 2
+      ;;
+    -o|--progress-template|--print|-f|--merge-output-format|--audio-format|--audio-quality|--sub-langs|--cookies-from-browser|--playlist-items|--sleep-requests) shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -578,6 +599,8 @@ case "$url" in
   *v2) segundos=2.4 ;;
   *v3) segundos=0.8 ;;
   *lento) segundos=6.0 ;;
+  *existente) segundos=1.0 ;;
+  *403|*429) segundos=0.1 ;;
   *) segundos=1.0 ;;
 esac
 
@@ -599,7 +622,10 @@ JSON
 esac
 
 echo "$url|$segundos|$(date +%s.%N)" >> "$carpeta/arranque.txt"
-final="$carpeta/reel-prueba-$segundos.mp4"
+# El nombre lleva el final de la url: si no, v4, v5 y v6 (todos 1.0s)
+# pisaban el mismo archivo y el siguiente "salteaba" en milisegundos.
+slug="${url##*/}"
+final="$carpeta/reel-prueba-$slug.mp4"
 parte="$final.part"
 
 # Cuantas veces se intento este archivo. Un reintento pasa a la segunda.
@@ -607,6 +633,27 @@ intentos=$(cat "$parte.intentos" 2>/dev/null || echo 0)
 intentos=$((intentos + 1))
 echo "$intentos" > "$parte.intentos"
 echo "intento=$intentos $url" >> "$carpeta/reanudaciones.txt"
+
+if [ -f "$final" ] && [ "$no_overwrite" = "1" ]; then
+  echo "saltea=$final" >> "$carpeta/reanudaciones.txt"
+  echo "DONE|$final"
+  exit 0
+fi
+
+if [ -f "$parte" ]; then
+  echo "reanuda=$parte" >> "$carpeta/reanudaciones.txt"
+fi
+
+case "$url" in
+  *403*)
+    echo "ERROR: unable to download video data: HTTP Error 403: Forbidden" >&2
+    exit 1
+    ;;
+  *429*)
+    echo "ERROR: HTTP Error 429: Too Many Requests" >&2
+    exit 1
+    ;;
+esac
 
 # `--fail` hace fallar el intento a proposito, para poder probar el reintento.
 if [ "$fallar" = "1" ] && [ "$intentos" -eq 1 ]; then
@@ -622,13 +669,14 @@ while [ "$i" -le 4 ]; do
   # Por stderr: es por donde yt-dlp manda el progreso, y leerlo de stdout era
   # justo el bug que dejo la deteccion del postprocesado sin funcionar.
   echo "PROGRESS| $((i * 25))%|1048576.0|$((4 - i))" >&2
-  # Lo bajado va al `.part`, que es lo que yt-dlp reanuda.
-  : >> "$parte"
+  # Lo bajado va al `.part`, que es lo que yt-dlp reanuda. Se agrega, no se
+  # pisa: un retome tiene que dejar lo que ya estaba.
+  echo "bloque-$i" >> "$parte"
   i=$((i + 1))
 done
 # El postprocesado se anuncia igual que yt-dlp: con su progress-template, por
 # stderr, y con un respiro para que el sondeo lo alcance a ver, como con ffmpeg.
-echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4" >&2
+echo "[Merger] Merging formats into $final" >&2
 echo "POSTPROCESS|started|Merger" >&2
 sleep 0.5
 echo "POSTPROCESS|finished|Merger" >&2
@@ -740,20 +788,19 @@ echo "DONE|$final"
         (total, arranques(salida), estados)
     }
 
-    /// Dos trabajos a la vez tienen que solaparse. Si la cola volviera a ser
-    /// secuencial, el segundo arrancaria recien cuando termina el primero.
-    fn comprobar_concurrencia(salida: &Path) {
+    /// Nunca corren dos a la vez: el segundo arranca cuando el primero ya
+    /// termino. Si alguien sube el cupo, esta prueba lo dice.
+    fn comprobar_uno_a_la_vez(salida: &Path) {
         let (total, marcas, estados) = correr(3, salida);
         let suma: f64 = DURACIONES.iter().sum();
 
-        // Ordenadas por trabajo, que es como las escribio el guion.
         let mut por_trabajo = marcas.clone();
         por_trabajo.sort_by(|a, b| a.url.cmp(&b.url));
         let duraciones: Vec<f64> = por_trabajo.iter().map(|marca| marca.segundos).collect();
         let mut tiempos: Vec<f64> = marcas.iter().map(|marca| marca.cuando).collect();
         tiempos.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        println!("total      {total:?}  (en serie serian ~{suma}s)");
+        println!("total      {total:?}  (en serie ~{suma}s)");
         println!("arranques  {tiempos:?}");
         println!("duraciones {duraciones:?}");
         println!("estados    {estados:?}");
@@ -769,24 +816,23 @@ echo "DONE|$final"
                 "el trabajo {id} termino en {estado:?}"
             );
         }
-        assert!(
-            total < Duration::from_secs_f64(DURACIONES[1] + 1.5),
-            "tres trabajos tardaron {total:?}: en serie serian ~{suma}s, o sea que no son concurrentes"
-        );
         assert_eq!(marcas.len(), 3, "no arrancaron los tres: {marcas:?}");
-        // Cada trabajo tiene que haber corrido con SU duracion: si todos
-        // arrancaron con la misma, la ruta del binario se leyo tarde.
         let esperadas: Vec<f64> = (1..=3).map(duracion_de).collect();
         assert_eq!(
             duraciones, esperadas,
             "no corrio la duracion que le tocaba a cada trabajo"
         );
-        assert!(
-            tiempos[1] - tiempos[0] < DURACIONES[1] / 2.0,
-            "los dos primeros arranques distan {}s: no se solaparon",
-            tiempos[1] - tiempos[0]
+
+        let intervalos: Vec<(f64, f64)> = marcas
+            .iter()
+            .map(|marca| (marca.cuando, marca.cuando + marca.segundos))
+            .collect();
+        let solapados = maximo_solapados(&intervalos);
+        assert_eq!(
+            solapados, 1,
+            "corrieron {solapados} a la vez: tiene que ser de a uno"
         );
-        println!("OK concurrencia");
+        println!("OK uno");
     }
 
     /// A mitad de camino el trabajo tiene que estar "descargando" con
@@ -821,7 +867,7 @@ echo "DONE|$final"
                         State::Done { .. } | State::Failed { .. } | State::Cancelled => {
                             finales = Some(job.state.clone());
                         }
-                        State::Probing => {}
+                        State::Probing | State::Retrying { .. } => {}
                     }
                     if job.progress > 0.0 {
                         vio_progreso = true;
@@ -977,13 +1023,9 @@ echo "DONE|$final"
             .collect();
         let solapados = maximo_solapados(&intervalos);
         println!("corrieron a la vez, como maximo: {solapados} (cupo {MAX_CONCURRENTES})");
-        assert!(
-            solapados <= MAX_CONCURRENTES,
-            "corrieron {solapados} a la vez con un cupo de {MAX_CONCURRENTES}"
-        );
-        assert!(
-            solapados >= 2,
-            "nunca corrieron dos a la vez: no hay concurrencia"
+        assert_eq!(
+            solapados, 1,
+            "corrieron {solapados} a la vez: tiene que ser de a uno"
         );
         println!("OK limite");
     }
@@ -1639,6 +1681,191 @@ echo "DONE|$final"
         println!("OK expansion");
     }
 
+    /// Un 403 programa tres reintentos con espera creciente y despues queda
+    /// en error, con la opcion de reintentar a mano.
+    fn comprobar_reintento_403(salida: &Path) {
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        std::env::set_var("REEL_YTDLP", &guion);
+        let backend = Backend::spawn(|| {});
+        encolar(&backend, 1, "https://ejemplo.test/403", salida);
+
+        let limite = Instant::now() + Duration::from_secs(15);
+        let mut esperas: Vec<u64> = Vec::new();
+        let mut intentos_vistos: Vec<u8> = Vec::new();
+        let mut finales: Option<State> = None;
+        while Instant::now() < limite && finales.is_none() {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(job) = queue.jobs.first() {
+                match &job.state {
+                    State::Retrying {
+                        wait_ms, attempt, ..
+                    } => {
+                        if intentos_vistos.last().copied() != Some(*attempt) {
+                            intentos_vistos.push(*attempt);
+                            esperas.push(*wait_ms);
+                        }
+                    }
+                    State::Failed { .. } => finales = Some(job.state.clone()),
+                    _ => {}
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        backend.send(Command::Shutdown);
+
+        let log = std::fs::read_to_string(salida.join("reanudaciones.txt")).unwrap_or_default();
+        println!("esperas={esperas:?} intentos={intentos_vistos:?} final={finales:?}");
+        println!("log:\n{log}");
+        assert_eq!(
+            esperas,
+            vec![30, 40, 50],
+            "las esperas tenian que crecer: {esperas:?}"
+        );
+        assert_eq!(intentos_vistos, vec![1, 2, 3]);
+        assert!(
+            matches!(finales, Some(State::Failed { ref reason }) if reason.contains("403")),
+            "tras tres reintentos tenia que quedar en error: {finales:?}"
+        );
+        let arranques = log
+            .lines()
+            .filter(|line| line.starts_with("intento="))
+            .count();
+        assert_eq!(arranques, 4, "un intento inicial y tres reintentos: {log}");
+        println!("OK 403");
+    }
+
+    /// Al reabrir, una fila a medias retoma el `.part` que dejo el corte, con
+    /// la misma carpeta y el mismo `--continue`.
+    fn comprobar_retoma_part(salida: &Path) {
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        std::env::set_var("REEL_YTDLP", &guion);
+        let backend = Backend::spawn(|| {});
+        encolar(&backend, 1, "https://ejemplo.test/lento", salida);
+
+        let parte = salida.join("reel-prueba-lento.mp4.part");
+        let limite = Instant::now() + Duration::from_secs(8);
+        let mut vio_parte = false;
+        while Instant::now() < limite && !vio_parte {
+            backend.drain();
+            vio_parte = parte.exists();
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        assert!(vio_parte, "tenia que haber un .part antes del corte");
+        std::fs::write(&parte, b"MARCA-RETOME\n").expect("deberia escribir la marca");
+
+        let json = salida.join("queue.json");
+        {
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(
+                matches!(queue.jobs[0].state, State::Downloading),
+                "al cortar tenia que estar descargando: {:?}",
+                queue.jobs[0].state
+            );
+            queue
+                .snapshot()
+                .save_to(&json)
+                .expect("deberia guardar la cola");
+        }
+        backend.send(Command::Shutdown);
+        std::thread::sleep(Duration::from_millis(250));
+
+        assert!(parte.exists(), "el .part tiene que sobrevivir al corte");
+        let marca = std::fs::read_to_string(&parte).unwrap_or_default();
+        assert!(
+            marca.contains("MARCA-RETOME"),
+            "el corte no puede pisar el .part: {marca:?}"
+        );
+
+        let mut restaurada = Queue::load_from(&json);
+        let pedidos = restaurada.preparar_reanudacion();
+        assert_eq!(pedidos.len(), 1, "la fila a medias tiene que arrancar");
+        let backend = Backend::spawn(|| {});
+        {
+            let mut queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            *queue = restaurada;
+        }
+        let pedido = pedidos.into_iter().next().expect("un pedido");
+        backend.send(Command::Start {
+            id: pedido.id,
+            url: pedido.url,
+            options: pedido.options,
+        });
+
+        let limite = Instant::now() + Duration::from_secs(20);
+        let mut finales: Option<State> = None;
+        while Instant::now() < limite && finales.is_none() {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(job) = queue.jobs.first() {
+                if !job.is_active() {
+                    finales = Some(job.state.clone());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        backend.send(Command::Shutdown);
+
+        let log = std::fs::read_to_string(salida.join("reanudaciones.txt")).unwrap_or_default();
+        println!("final={finales:?}\n{log}");
+        assert!(
+            matches!(finales, Some(State::Done { .. })),
+            "al reabrir tenia que terminar: {finales:?}"
+        );
+        assert!(
+            log.contains("reanuda="),
+            "el segundo intento no reuso el .part:\n{log}"
+        );
+        assert!(log.contains("intento=2"), "no hubo segundo intento:\n{log}");
+        println!("OK part");
+    }
+
+    /// Un archivo final que ya esta no se reescribe ni cambia de tamano.
+    fn comprobar_archivo_existente(salida: &Path) {
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        std::env::set_var("REEL_YTDLP", &guion);
+        let final_path = salida.join("reel-prueba-existente.mp4");
+        std::fs::write(&final_path, b"NO-TOCAR-ESTE-ARCHIVO").expect("deberia escribir el final");
+        let antes = std::fs::metadata(&final_path)
+            .expect("deberia medirlo")
+            .len();
+
+        let backend = Backend::spawn(|| {});
+        encolar(&backend, 1, "https://ejemplo.test/existente", salida);
+
+        let limite = Instant::now() + Duration::from_secs(10);
+        let mut finales: Option<State> = None;
+        while Instant::now() < limite && finales.is_none() {
+            backend.drain();
+            let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(job) = queue.jobs.first() {
+                if !job.is_active() {
+                    finales = Some(job.state.clone());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        backend.send(Command::Shutdown);
+
+        let despues = std::fs::metadata(&final_path)
+            .expect("deberia medirlo de nuevo")
+            .len();
+        let log = std::fs::read_to_string(salida.join("reanudaciones.txt")).unwrap_or_default();
+        let contenido = std::fs::read_to_string(&final_path).unwrap_or_default();
+        println!("final={finales:?} {antes} -> {despues}\n{log}");
+        assert!(
+            matches!(finales, Some(State::Done { .. })),
+            "tenia que terminar sin tocar el archivo: {finales:?}"
+        );
+        assert_eq!(antes, despues, "el archivo no puede cambiar de tamano");
+        assert_eq!(contenido, "NO-TOCAR-ESTE-ARCHIVO");
+        assert!(
+            log.contains("saltea="),
+            "tenia que saltear el archivo que ya estaba:\n{log}"
+        );
+        println!("OK existente");
+    }
+
     /// Un archivo que quedo truncado se arregla con `volver a bajar`, y no con
     /// un reintento normal. Necesita red y el yt-dlp de verdad, porque lo que
     /// se prueba es justo lo que hace yt-dlp con un archivo que ya existe.
@@ -1719,6 +1946,12 @@ echo "DONE|$final"
     /// Corre en un proceso propio: prepara un directorio, elige la prueba y
     /// devuelve el codigo de salida. Cero significa que paso.
     pub fn run(modo: &str) -> i32 {
+        // Las pausas y reintentos reales duran minutos. En las pruebas se
+        // achican para no esperarlos.
+        std::env::set_var("REEL_PAUSA_MS", "0,0");
+        std::env::set_var("REEL_REINTENTO_MS", "30,40,50");
+        std::env::set_var("REEL_SLEEP_REQUESTS", "0");
+
         let salida = std::env::temp_dir().join(format!("reel-selfcheck-{}", std::process::id()));
         if let Err(error) = std::fs::create_dir_all(&salida) {
             eprintln!("no pude preparar {}: {error}", salida.display());
@@ -1726,13 +1959,16 @@ echo "DONE|$final"
         }
 
         let resultado = std::panic::catch_unwind(|| match modo {
-            "concurrencia" => comprobar_concurrencia(&salida),
+            "concurrencia" | "uno" => comprobar_uno_a_la_vez(&salida),
             "estado" => comprobar_estado(&salida),
             "cancelacion" => comprobar_cancelacion(&salida),
             "limite" => comprobar_limite(&salida),
             "espera" => comprobar_espera_sin_limite(&salida),
             "carrera" => comprobar_carrera_entre_terminar_y_cancelar(&salida),
             "reintento" => comprobar_reintento(&salida),
+            "403" => comprobar_reintento_403(&salida),
+            "part" => comprobar_retoma_part(&salida),
+            "existente" => comprobar_archivo_existente(&salida),
             "expansion" => comprobar_expansion(&salida),
             "volver-a-bajar" => comprobar_volver_a_bajar(&salida),
             "descarga-real" => comprobar_descarga_real(&salida),

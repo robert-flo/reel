@@ -1,9 +1,9 @@
 //! Los hilos que hablan con yt-dlp.
 //!
-//! Un trabajo, un hilo: la cola baja varios a la vez, que es lo que promete el
-//! README y lo que el boceto muestra. El hilo supervisor solo despacha ordenes
-//! y nunca espera a un trabajo, asi que cancelar y encolar siguen andando
-//! mientras abajo se descarga.
+//! Un trabajo, un hilo: la cola baja de a uno (`MAX_CONCURRENTES`), con pausa
+//! entre videos. El hilo supervisor solo despacha ordenes y nunca espera a un
+//! trabajo, asi que cancelar y encolar siguen andando mientras abajo se
+//! descarga.
 //!
 //! Por trabajo, dos llamadas: `-J --no-playlist` para resolver titulo, autor y
 //! duracion, y luego la descarga con `--newline --progress-template` para que
@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::{format_by_id, Command, Event, Kind, Media, Options, State};
 
@@ -151,11 +151,123 @@ impl VecDeLineas {
     }
 }
 
-/// Cuantos trabajos pueden bajar a la vez. Sin tope, encolar treinta enlaces
-/// lanzaria treinta yt-dlp y treinta ffmpeg: la maquina deja de responder y las
-/// descargas se estorban entre si. Los que sobran quedan en espera hasta que
-/// se libere un cupo.
-pub const MAX_CONCURRENTES: usize = 3;
+/// Cuantos trabajos pueden bajar a la vez. Siempre uno: bajar varios en
+/// paralelo es lo que le saca el 403 a YouTube. Los que sobran quedan en
+/// espera hasta que se libere el cupo.
+pub const MAX_CONCURRENTES: usize = 1;
+
+/// Pausa al azar entre un video y el siguiente, en milisegundos.
+const PAUSA_ENTRE_VIDEOS_MS: (u64, u64) = (5_000, 15_000);
+
+/// Espera antes de cada reintento automatico de un 403/429: 1 min, 3 min, 10 min.
+const REINTENTO_MS: [u64; 3] = [60_000, 180_000, 600_000];
+
+/// `--sleep-requests` por defecto: una pausa corta entre pedidos HTTP de yt-dlp.
+const SLEEP_REQUESTS_SEGS: &str = "1";
+
+/// Pausa entre videos. `REEL_PAUSA_MS=min,max` la achica en las pruebas.
+pub(crate) fn pausa_entre_videos() -> (Duration, Duration) {
+    parse_par_ms("REEL_PAUSA_MS").unwrap_or((
+        Duration::from_millis(PAUSA_ENTRE_VIDEOS_MS.0),
+        Duration::from_millis(PAUSA_ENTRE_VIDEOS_MS.1),
+    ))
+}
+
+/// Las tres esperas de un 403/429. `REEL_REINTENTO_MS=a,b,c` las achica en las
+/// pruebas para no esperar minutos de verdad.
+pub(crate) fn esperas_de_reintento() -> [Duration; 3] {
+    parse_triple_ms("REEL_REINTENTO_MS").unwrap_or([
+        Duration::from_millis(REINTENTO_MS[0]),
+        Duration::from_millis(REINTENTO_MS[1]),
+        Duration::from_millis(REINTENTO_MS[2]),
+    ])
+}
+
+/// Segundos entre pedidos HTTP de yt-dlp. `REEL_SLEEP_REQUESTS=0` lo apaga.
+pub(crate) fn sleep_requests() -> Option<String> {
+    let valor = std::env::var("REEL_SLEEP_REQUESTS").unwrap_or_else(|_| SLEEP_REQUESTS_SEGS.into());
+    let recortado = valor.trim();
+    if recortado.is_empty() || recortado == "0" {
+        None
+    } else {
+        Some(recortado.to_string())
+    }
+}
+
+/// La espera del reintento `intento` (0, 1, 2). `None` si ya no quedan.
+pub(crate) fn espera_de_reintento(intento: u8) -> Option<Duration> {
+    esperas_de_reintento().get(intento as usize).copied()
+}
+
+/// Un 403 o un 429 se reintenta solo; el resto queda en error de una.
+pub(crate) fn es_reintentable(error: &str) -> bool {
+    let texto = error.to_lowercase();
+    texto.contains("403")
+        || texto.contains("429")
+        || texto.contains("forbidden")
+        || texto.contains("too many requests")
+}
+
+fn parse_par_ms(nombre: &str) -> Option<(Duration, Duration)> {
+    let crudo = std::env::var(nombre).ok()?;
+    let mut partes = crudo.split(',');
+    let min = partes.next()?.trim().parse::<u64>().ok()?;
+    let max = partes.next()?.trim().parse::<u64>().ok()?;
+    if partes.next().is_some() {
+        return None;
+    }
+    Some((Duration::from_millis(min), Duration::from_millis(max)))
+}
+
+fn parse_triple_ms(nombre: &str) -> Option<[Duration; 3]> {
+    let crudo = std::env::var(nombre).ok()?;
+    let mut partes = crudo.split(',');
+    let a = partes.next()?.trim().parse::<u64>().ok()?;
+    let b = partes.next()?.trim().parse::<u64>().ok()?;
+    let c = partes.next()?.trim().parse::<u64>().ok()?;
+    if partes.next().is_some() {
+        return None;
+    }
+    Some([
+        Duration::from_millis(a),
+        Duration::from_millis(b),
+        Duration::from_millis(c),
+    ])
+}
+
+fn pausa_al_azar(min: Duration, max: Duration) -> Duration {
+    if max <= min {
+        return min;
+    }
+    let span = (max - min).as_millis() as u64;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    min + Duration::from_millis(nanos % (span + 1))
+}
+
+/// Duerme a trozos para poder cancelar a mitad de una pausa larga.
+fn dormir_cancelable(
+    total: Duration,
+    cancelled: &Mutex<HashSet<u64>>,
+    id: u64,
+    alive: &AtomicBool,
+) -> bool {
+    if total.is_zero() {
+        return !lock(cancelled).contains(&id) && alive.load(Ordering::SeqCst);
+    }
+    let corte = Duration::from_millis(50);
+    let inicio = Instant::now();
+    while inicio.elapsed() < total {
+        if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
+            return false;
+        }
+        let queda = total.saturating_sub(inicio.elapsed());
+        std::thread::sleep(corte.min(queda));
+    }
+    !lock(cancelled).contains(&id) && alive.load(Ordering::SeqCst)
+}
 
 /// El cupo de descargas simultaneas. Se pide antes de arrancar un trabajo y se
 /// devuelve cuando termina. Pedirlo espera en el hilo del trabajo, no en el
@@ -214,6 +326,8 @@ where
     let cupos = Arc::new(Cupos::new(MAX_CONCURRENTES));
     let wake = Arc::new(wake);
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
+    // El primer video no espera la pausa de 5-15 s; los siguientes si.
+    let es_primera = Arc::new(AtomicBool::new(true));
 
     while let Ok(command) = commands.recv() {
         match command {
@@ -255,6 +369,7 @@ where
                 let wake_job = Arc::clone(&wake);
                 let alive = Arc::clone(&alive);
                 let cupos = Arc::clone(&cupos);
+                let es_primera = Arc::clone(&es_primera);
                 // Se resuelve aca y no dentro del hilo: con varios trabajos a
                 // la vez, leerlo alla seria una carrera entre todos.
                 let ytdlp = ytdlp_binary();
@@ -268,12 +383,19 @@ where
                         // Esperar cupo es cosa del trabajo, no del supervisor:
                         // asi el resto de la cola sigue andando mientras tanto.
                         // Sin tope de tiempo: una lista larga no puede fallar
-                        // solo por no entrar en los tres a la vez.
+                        // solo por no entrar en su turno.
                         let _cupo = cupos.tomar();
                         if lock(&cancelled).contains(&id) {
                             return;
                         }
-                        if let Err(error) = run_job(
+                        let saltar_pausa = es_primera.swap(false, Ordering::SeqCst);
+                        if !saltar_pausa {
+                            let (min, max) = pausa_entre_videos();
+                            if !dormir_cancelable(pausa_al_azar(min, max), &cancelled, id, &alive) {
+                                return;
+                            }
+                        }
+                        if let Err(error) = atender_con_reintentos(
                             id,
                             &ytdlp,
                             &url,
@@ -607,13 +729,12 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
         // encuentra el `.part`, y cancelar lo deja ahi porque la carpeta y la
         // plantilla no cambian; se pide igual para que no dependa de un
         // default que podria cambiar.
-        //
-        // `--no-overwrites` se probo y se saco: es redundante, yt-dlp ya
-        // saltea un archivo que existe. Medido con el mismo archivo en dos
-        // carpetas, una con la bandera y otra sin ella: las dos quedaron
-        // iguales, sin volver a bajar. Poner una bandera que no cambia nada
-        // solo hace creer que hace algo.
         "--continue".into(),
+        // El `.part` tiene que vivir en la misma carpeta que el archivo
+        // final. Sin `temp:`, yt-dlp puede dejarlo en el cwd de reel; al
+        // reabrir, `--continue` no lo encuentra y la fila no crece.
+        "-P".into(),
+        format!("temp:{}", dir.display()),
         "--progress-template".into(),
         PROGRESS_TEMPLATE.into(),
         "--progress-template".into(),
@@ -636,6 +757,15 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
     // recuperacion de un archivo truncado, no lo que hace un reintento normal.
     if options.force {
         args.push("--force-overwrites".into());
+    } else {
+        // Un archivo final que ya esta no se reescribe. `--continue` sigue
+        // retomando el `.part`; esto solo cubre el caso listo.
+        args.push("--no-overwrites".into());
+    }
+
+    if let Some(segundos) = sleep_requests() {
+        args.push("--sleep-requests".into());
+        args.push(segundos);
     }
 
     for arg in format.args {
@@ -683,7 +813,7 @@ pub(crate) fn download_args(url: &str, options: &Options) -> (Vec<String>, PathB
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_job<W>(
+fn atender_con_reintentos<W>(
     id: u64,
     ytdlp: &Path,
     url: &str,
@@ -697,8 +827,65 @@ fn run_job<W>(
 where
     W: Fn() + Send + Sync + 'static,
 {
+    let mut fallos: u8 = 0;
+    loop {
+        let estado = run_job(
+            id, ytdlp, url, options, running, cancelled, events, wake, alive,
+        )?;
+        let Some(estado) = estado else {
+            return Ok(());
+        };
+        match estado {
+            State::Failed { reason } if es_reintentable(&reason) => {
+                if let Some(espera) = espera_de_reintento(fallos) {
+                    fallos += 1;
+                    let _ = events.send(Event::StateChanged {
+                        id,
+                        state: State::Retrying {
+                            reason: reason.clone(),
+                            attempt: fallos,
+                            wait_ms: espera.as_millis() as u64,
+                        },
+                    });
+                    wake();
+                    if !dormir_cancelable(espera, cancelled, id, alive) {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                let _ = events.send(Event::StateChanged {
+                    id,
+                    state: State::Failed { reason },
+                });
+                wake();
+                return Ok(());
+            }
+            otro => {
+                let _ = events.send(Event::StateChanged { id, state: otro });
+                wake();
+                return Ok(());
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_job<W>(
+    id: u64,
+    ytdlp: &Path,
+    url: &str,
+    options: &Options,
+    running: &Running,
+    cancelled: &Mutex<HashSet<u64>>,
+    events: &Sender<Event>,
+    wake: &Arc<W>,
+    alive: &AtomicBool,
+) -> std::io::Result<Option<State>>
+where
+    W: Fn() + Send + Sync + 'static,
+{
     if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
-        return Ok(());
+        return Ok(None);
     }
 
     let (args, dir) = download_args(url, options);
@@ -717,7 +904,7 @@ where
         if let Some(mut child) = lock(running).remove(&id) {
             let _ = child.kill();
         }
-        return Ok(());
+        return Ok(None);
     }
 
     // Ya hay un yt-dlp corriendo para este trabajo: ahora si.
@@ -790,7 +977,7 @@ where
     // "listo" encima de un "cancelado". Durante el cierre, ademas, no hay a
     // quien contarle nada.
     if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
-        return Ok(());
+        return Ok(None);
     }
 
     let state = match status {
@@ -810,9 +997,7 @@ where
         },
     };
 
-    let _ = events.send(Event::StateChanged { id, state });
-    wake();
-    Ok(())
+    Ok(Some(state))
 }
 
 /// Que hacer con una linea de la salida de yt-dlp. Separado del bucle para
@@ -903,7 +1088,11 @@ pub enum Consejo {
 pub(crate) fn consejo_para(error: &str) -> Option<Consejo> {
     let texto = error.to_lowercase();
 
-    if texto.contains("403") || texto.contains("forbidden") {
+    if texto.contains("403")
+        || texto.contains("forbidden")
+        || texto.contains("429")
+        || texto.contains("too many requests")
+    {
         return Some(Consejo::Forbidden);
     }
     if texto.contains("private video") || texto.contains("login") || texto.contains("sign in") {
@@ -1269,6 +1458,10 @@ mod tests {
     fn los_errores_conocidos_traen_consejo() {
         let real = "unable to download video data: HTTP Error 403: Forbidden";
         assert_eq!(consejo_para(real), Some(Consejo::Forbidden));
+        assert_eq!(
+            consejo_para("HTTP Error 429: Too Many Requests"),
+            Some(Consejo::Forbidden)
+        );
 
         assert_eq!(consejo_para("ERROR: Private video"), Some(Consejo::Private));
         assert_eq!(
@@ -1313,13 +1506,41 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--continue"));
     }
 
-    /// `--no-overwrites` se probo y se saco: yt-dlp ya saltea un archivo que
-    /// existe, asi que la bandera no cambiaba nada y solo confundia.
+    /// Un archivo que ya esta no se pisa: `--no-overwrites` junto a
+    /// `--continue` saltea el final y retoma el `.part`.
     #[test]
-    fn no_lleva_banderas_que_no_hacen_nada() {
+    fn no_reescribe_un_archivo_que_existe() {
         let options = Options::default();
-        let (args, _) = download_args("https://ejemplo.test/v", &options);
-        assert!(!args.iter().any(|arg| arg == "--no-overwrites"));
+        let (args, dir) = download_args("https://ejemplo.test/v", &options);
+        assert!(args.iter().any(|arg| arg == "--no-overwrites"));
+        assert!(args.iter().any(|arg| arg == "--continue"));
+        let temp = format!("temp:{}", dir.display());
+        assert!(
+            args.iter().any(|arg| arg == &temp),
+            "el .part tiene que ir a la carpeta de salida, no al cwd: {args:?}"
+        );
+        assert!(args.iter().any(|arg| arg == "--sleep-requests"));
+    }
+
+    #[test]
+    fn siempre_baja_de_a_uno() {
+        assert_eq!(MAX_CONCURRENTES, 1);
+    }
+
+    #[test]
+    fn un_403_o_429_se_reintenta_con_espera_creciente() {
+        assert!(es_reintentable("HTTP Error 403: Forbidden"));
+        assert!(es_reintentable("HTTP Error 429: Too Many Requests"));
+        assert!(!es_reintentable("Requested format is not available"));
+
+        let esperas = esperas_de_reintento();
+        assert_eq!(esperas[0], Duration::from_secs(60));
+        assert_eq!(esperas[1], Duration::from_secs(180));
+        assert_eq!(esperas[2], Duration::from_secs(600));
+        assert!(espera_de_reintento(0).is_some());
+        assert!(espera_de_reintento(1).is_some());
+        assert!(espera_de_reintento(2).is_some());
+        assert!(espera_de_reintento(3).is_none());
     }
 
     /// Bajar de cero es una salida explicita, no lo que pasa siempre: pedirla
@@ -1336,6 +1557,7 @@ mod tests {
         };
         let (args, _) = download_args("https://ejemplo.test/v", &forzado);
         assert!(args.iter().any(|arg| arg == "--force-overwrites"));
+        assert!(!args.iter().any(|arg| arg == "--no-overwrites"));
         // Y sigue pudiendo reanudar lo que quedo a medias.
         assert!(args.iter().any(|arg| arg == "--continue"));
     }

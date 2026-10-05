@@ -352,6 +352,16 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                 .unwrap_or_else(|| path.clone());
             (tr.status_done.to_string(), palette.done, detail)
         }
+        State::Retrying {
+            reason, wait_ms, ..
+        } => {
+            let secs = wait_ms.div_ceil(1000).max(1);
+            (
+                tr.status_retrying.to_string(),
+                palette.warning,
+                format!("{}\n{}", tr.retrying_in(&human_eta(secs)), reason),
+            )
+        }
         State::Failed { reason } => (
             tr.status_failed.to_string(),
             palette.danger,
@@ -364,7 +374,7 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
     };
 
     let bar_color = match &job.state {
-        State::Postprocessing { .. } => palette.warning,
+        State::Postprocessing { .. } | State::Retrying { .. } => palette.warning,
         State::Done { .. } => palette.done,
         State::Failed { .. } => palette.danger,
         _ => palette.progress,
