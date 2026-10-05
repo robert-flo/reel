@@ -36,6 +36,12 @@ pub fn settings_file() -> PathBuf {
     config_dir().join("settings.json")
 }
 
+/// La cola de descargas, en state y no en config: se reescribe sola y se
+/// puede borrar sin perder los ajustes.
+pub fn queue_file() -> PathBuf {
+    state_dir().join("queue.json")
+}
+
 pub fn log_file() -> PathBuf {
     state_dir().join("reel.log")
 }
