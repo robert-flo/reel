@@ -41,8 +41,8 @@ fn comprobar(modo: &str) {
 }
 
 #[test]
-fn la_cola_baja_varios_a_la_vez() {
-    comprobar("concurrencia");
+fn nunca_corren_dos_a_la_vez() {
+    comprobar("uno");
 }
 
 #[test]
@@ -78,6 +78,21 @@ fn esperar_cupo_no_falla_por_el_tiempo() {
 #[test]
 fn carrera_entre_terminar_y_cancelar() {
     comprobar("carrera");
+}
+
+#[test]
+fn un_403_se_reintenta_con_espera_creciente() {
+    comprobar("403");
+}
+
+#[test]
+fn una_fila_a_medias_retoma_el_part() {
+    comprobar("part");
+}
+
+#[test]
+fn un_archivo_existente_no_se_toca() {
+    comprobar("existente");
 }
 
 #[test]

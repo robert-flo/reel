@@ -188,10 +188,18 @@ mod tests {
                     },
                 ),
                 trabajo(3, State::Queued),
-                trabajo(4, State::Downloading),
-                trabajo(5, State::Cancelled),
+                trabajo(
+                    4,
+                    State::Retrying {
+                        reason: "403".into(),
+                        attempt: 1,
+                        wait_ms: 60_000,
+                    },
+                ),
+                trabajo(5, State::Downloading),
+                trabajo(6, State::Cancelled),
             ],
-            next_id: 5,
+            next_id: 6,
             preview: Some(("https://ejemplo.test/x".into(), Media::default())),
             recien_encolados: vec![9],
             ..Queue::default()
@@ -205,7 +213,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(recargada.jobs, cola.jobs);
-        assert_eq!(recargada.next_id, 5);
+        assert_eq!(recargada.next_id, 6);
         assert!(recargada.preview.is_none());
         assert!(recargada.recien_encolados.is_empty());
         assert!(matches!(recargada.jobs[1].state, State::Failed { .. }));
@@ -214,15 +222,22 @@ mod tests {
             "con error sigue reintentable"
         );
 
+        assert!(
+            recargada.jobs[3].is_active(),
+            "esperando reintento sigue activo"
+        );
+
         let pedidos = recargada.preparar_reanudacion();
-        assert_eq!(pedidos.len(), 2, "pendiente y a medias arrancan");
+        assert_eq!(pedidos.len(), 3, "pendiente, reintento y a medias arrancan");
         assert!(matches!(recargada.jobs[0].state, State::Done { .. }));
         assert!(matches!(recargada.jobs[1].state, State::Failed { .. }));
         assert_eq!(recargada.jobs[2].state, State::Queued);
         assert_eq!(recargada.jobs[3].state, State::Queued);
-        assert_eq!(recargada.jobs[4].state, State::Cancelled);
+        assert_eq!(recargada.jobs[4].state, State::Queued);
+        assert_eq!(recargada.jobs[5].state, State::Cancelled);
         assert!(pedidos.iter().any(|p| p.id == 3));
         assert!(pedidos.iter().any(|p| p.id == 4));
+        assert!(pedidos.iter().any(|p| p.id == 5));
     }
 
     #[test]

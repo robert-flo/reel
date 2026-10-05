@@ -148,6 +148,7 @@ i18n_strings! {
     status_done: { en: "done", es: "listo" }
     status_failed: { en: "failed", es: "falló" }
     status_cancelled: { en: "cancelled", es: "cancelado" }
+    status_retrying: { en: "retrying", es: "reintentando" }
     remaining: { en: "left", es: "restante" }
     cancel: { en: "cancel", es: "cancelar" }
     retry: { en: "retry", es: "reintentar" }
@@ -307,6 +308,10 @@ impl Catalog {
 
     pub fn remaining_eta(&self, eta: &str) -> String {
         format!("{eta} {}", self.remaining)
+    }
+
+    pub fn retrying_in(&self, eta: &str) -> String {
+        format!("{} · {eta} {}", self.status_retrying, self.remaining)
     }
 
     pub fn playlist_done(&self, n: usize) -> String {
