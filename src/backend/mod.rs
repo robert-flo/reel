@@ -622,7 +622,10 @@ JSON
 esac
 
 echo "$url|$segundos|$(date +%s.%N)" >> "$carpeta/arranque.txt"
-final="$carpeta/reel-prueba-$segundos.mp4"
+# El nombre lleva el final de la url: si no, v4, v5 y v6 (todos 1.0s)
+# pisaban el mismo archivo y el siguiente "salteaba" en milisegundos.
+slug="${url##*/}"
+final="$carpeta/reel-prueba-$slug.mp4"
 parte="$final.part"
 
 # Cuantas veces se intento este archivo. Un reintento pasa a la segunda.
@@ -673,7 +676,7 @@ while [ "$i" -le 4 ]; do
 done
 # El postprocesado se anuncia igual que yt-dlp: con su progress-template, por
 # stderr, y con un respiro para que el sondeo lo alcance a ver, como con ffmpeg.
-echo "[Merger] Merging formats into $carpeta/reel-prueba-$segundos.mp4" >&2
+echo "[Merger] Merging formats into $final" >&2
 echo "POSTPROCESS|started|Merger" >&2
 sleep 0.5
 echo "POSTPROCESS|finished|Merger" >&2
@@ -1740,7 +1743,7 @@ echo "DONE|$final"
         let backend = Backend::spawn(|| {});
         encolar(&backend, 1, "https://ejemplo.test/lento", salida);
 
-        let parte = salida.join("reel-prueba-6.0.mp4.part");
+        let parte = salida.join("reel-prueba-lento.mp4.part");
         let limite = Instant::now() + Duration::from_secs(8);
         let mut vio_parte = false;
         while Instant::now() < limite && !vio_parte {
@@ -1821,7 +1824,7 @@ echo "DONE|$final"
     fn comprobar_archivo_existente(salida: &Path) {
         let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
         std::env::set_var("REEL_YTDLP", &guion);
-        let final_path = salida.join("reel-prueba-1.0.mp4");
+        let final_path = salida.join("reel-prueba-existente.mp4");
         std::fs::write(&final_path, b"NO-TOCAR-ESTE-ARCHIVO").expect("deberia escribir el final");
         let antes = std::fs::metadata(&final_path)
             .expect("deberia medirlo")
