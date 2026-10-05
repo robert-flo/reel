@@ -173,30 +173,32 @@ mod tests {
     #[test]
     fn guardar_y_recargar_conserva_los_estados() {
         let path = temp_path("roundtrip");
-        let mut cola = Queue::default();
-        cola.jobs = vec![
-            trabajo(
-                1,
-                State::Done {
-                    path: "/tmp/listo.mp4".into(),
-                },
-            ),
-            trabajo(
-                2,
-                State::Failed {
-                    reason: "403".into(),
-                },
-            ),
-            trabajo(3, State::Queued),
-            trabajo(4, State::Downloading),
-            trabajo(5, State::Cancelled),
-        ];
+        let mut cola = Queue {
+            jobs: vec![
+                trabajo(
+                    1,
+                    State::Done {
+                        path: "/tmp/listo.mp4".into(),
+                    },
+                ),
+                trabajo(
+                    2,
+                    State::Failed {
+                        reason: "403".into(),
+                    },
+                ),
+                trabajo(3, State::Queued),
+                trabajo(4, State::Downloading),
+                trabajo(5, State::Cancelled),
+            ],
+            next_id: 5,
+            preview: Some(("https://ejemplo.test/x".into(), Media::default())),
+            recien_encolados: vec![9],
+            ..Queue::default()
+        };
         cola.jobs[0].progress = 1.0;
         cola.jobs[0].speed = None;
         cola.jobs[0].eta_secs = None;
-        cola.next_id = 5;
-        cola.preview = Some(("https://ejemplo.test/x".into(), Media::default()));
-        cola.recien_encolados = vec![9];
 
         cola.save_to(&path).expect("deberia guardar");
         let mut recargada = Queue::load_from(&path);
