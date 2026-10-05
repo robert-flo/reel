@@ -71,6 +71,11 @@ fn el_cupo_no_deja_lanzar_todo_a_la_vez() {
 }
 
 #[test]
+fn esperar_cupo_no_falla_por_el_tiempo() {
+    comprobar("espera");
+}
+
+#[test]
 fn carrera_entre_terminar_y_cancelar() {
     comprobar("carrera");
 }

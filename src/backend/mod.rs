@@ -983,6 +983,105 @@ echo "DONE|$final"
         println!("OK limite");
     }
 
+    /// Encolar mas trabajos que cupos, con ocupantes lentos: los que esperan
+    /// turno no pasan a error. Antes fallaban a los 600 s.
+    fn comprobar_espera_sin_limite(salida: &Path) {
+        let ocupantes = MAX_CONCURRENTES as u64;
+        let extras: u64 = 3;
+        let total = ocupantes + extras;
+
+        let guion = escribir_guion(salida).expect("deberia escribir el yt-dlp falso");
+        std::env::set_var("REEL_YTDLP", &guion);
+        let backend = Backend::spawn(|| {});
+
+        for id in 1..=ocupantes {
+            encolar(&backend, id, "https://ejemplo.test/lento", salida);
+        }
+        for i in 0..extras {
+            let id = ocupantes + 1 + i;
+            encolar(
+                &backend,
+                id,
+                &format!("https://ejemplo.test/v{}", i + 1),
+                salida,
+            );
+        }
+
+        let limite = Instant::now() + Duration::from_secs(90);
+        let mut estados: HashMap<u64, State> = HashMap::new();
+        let mut cancelado: Option<u64> = None;
+        while estados.len() < total as usize && Instant::now() < limite {
+            backend.drain();
+            let mut a_cancelar = None;
+            {
+                let queue = backend.queue.lock().unwrap_or_else(|e| e.into_inner());
+                if cancelado.is_none() {
+                    a_cancelar = queue
+                        .jobs
+                        .iter()
+                        .find(|job| job.id > ocupantes && matches!(job.state, State::Queued))
+                        .map(|job| job.id);
+                }
+                for job in &queue.jobs {
+                    if !job.is_active() {
+                        estados.insert(job.id, job.state.clone());
+                    }
+                }
+            }
+            if let Some(id) = a_cancelar {
+                backend.send(Command::Cancel { id });
+                cancelado = Some(id);
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        backend.send(Command::Shutdown);
+
+        assert_eq!(estados.len(), total as usize, "faltan finales: {estados:?}");
+        let cancelado = cancelado.expect("tenia que haber un extra en espera para cancelar");
+        for (id, estado) in &estados {
+            assert!(
+                !matches!(estado, State::Failed { .. }),
+                "el trabajo {id} fallo por esperar turno: {estado:?}"
+            );
+            if *id == cancelado {
+                assert!(
+                    matches!(estado, State::Cancelled),
+                    "cancelar en espera dejo al trabajo {id} en {estado:?}"
+                );
+            } else {
+                assert!(
+                    matches!(estado, State::Done { .. }),
+                    "el trabajo {id} termino en {estado:?}"
+                );
+            }
+        }
+
+        let marcas = arranques(salida);
+        let lentos = marcas
+            .iter()
+            .filter(|marca| marca.url.contains("lento"))
+            .count();
+        assert_eq!(
+            lentos, ocupantes as usize,
+            "no arrancaron los ocupantes lentos: {marcas:?}"
+        );
+        assert!(
+            marcas.len() >= ocupantes as usize,
+            "tenian que arrancar los ocupantes: {marcas:?}"
+        );
+
+        let intervalos: Vec<(f64, f64)> = marcas
+            .iter()
+            .map(|marca| (marca.cuando, marca.cuando + marca.segundos))
+            .collect();
+        let solapados = maximo_solapados(&intervalos);
+        assert!(
+            solapados <= MAX_CONCURRENTES,
+            "corrieron {solapados} a la vez con un cupo de {MAX_CONCURRENTES}"
+        );
+        println!("OK espera");
+    }
+
     /// Cancelar justo cuando el trabajo esta terminando: el estado no puede
     /// pasar de "cancelado" a "listo". Es la carrera entre el hilo del trabajo
     /// y el supervisor, asi que se estresa varias veces.
@@ -1626,6 +1725,7 @@ echo "DONE|$final"
             "estado" => comprobar_estado(&salida),
             "cancelacion" => comprobar_cancelacion(&salida),
             "limite" => comprobar_limite(&salida),
+            "espera" => comprobar_espera_sin_limite(&salida),
             "carrera" => comprobar_carrera_entre_terminar_y_cancelar(&salida),
             "reintento" => comprobar_reintento(&salida),
             "expansion" => comprobar_expansion(&salida),

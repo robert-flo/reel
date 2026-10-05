@@ -158,8 +158,8 @@ impl VecDeLineas {
 pub const MAX_CONCURRENTES: usize = 3;
 
 /// El cupo de descargas simultaneas. Se pide antes de arrancar un trabajo y se
-/// devuelve cuando termina; pedirlo no bloquea al supervisor mas que un rato
-/// corto, porque los cupos se liberan solos.
+/// devuelve cuando termina. Pedirlo espera en el hilo del trabajo, no en el
+/// supervisor: el resto de la cola sigue andando.
 struct Cupos {
     libres: Mutex<usize>,
 }
@@ -177,22 +177,18 @@ impl Cupos {
         }
     }
 
-    /// Espera a que haya lugar. Mira cada pocos milisegundos en vez de dormir
-    /// sobre una condicion: los cupos se liberan desde otros hilos y el
-    /// supervisor tiene que poder despertar a atender lo que llegue.
-    fn tomar(&self, limite: Duration) -> Option<Cupo<'_>> {
+    /// Espera a que haya lugar, sin tope de tiempo. Mira cada pocos milisegundos
+    /// en vez de dormir sobre una condicion: los cupos se liberan desde otros
+    /// hilos y el trabajo sigue en espera hasta que toque.
+    fn tomar(&self) -> Cupo<'_> {
         let espera = Duration::from_millis(5);
-        let arranque = std::time::Instant::now();
         loop {
             {
                 let mut libres = lock(&self.libres);
                 if *libres > 0 {
                     *libres -= 1;
-                    return Some(Cupo { cupos: self });
+                    return Cupo { cupos: self };
                 }
-            }
-            if arranque.elapsed() > limite {
-                return None;
             }
             std::thread::sleep(espera);
         }
@@ -271,31 +267,24 @@ where
                         }
                         // Esperar cupo es cosa del trabajo, no del supervisor:
                         // asi el resto de la cola sigue andando mientras tanto.
-                        if let Some(_cupo) = cupos.tomar(Duration::from_secs(600)) {
-                            if lock(&cancelled).contains(&id) {
-                                return;
-                            }
-                            if let Err(error) = run_job(
-                                id,
-                                &ytdlp,
-                                &url,
-                                &options,
-                                &running,
-                                &cancelled,
-                                &events_job,
-                                &wake_job,
-                                &alive,
-                            ) {
-                                log::error!("no pude atender el trabajo {id}: {error}");
-                            }
-                        } else {
-                            let _ = events_job.send(Event::StateChanged {
-                                id,
-                                state: State::Failed {
-                                    reason: "espere demasiado por un lugar en la cola".into(),
-                                },
-                            });
-                            wake_job();
+                        // Sin tope de tiempo: una lista larga no puede fallar
+                        // solo por no entrar en los tres a la vez.
+                        let _cupo = cupos.tomar();
+                        if lock(&cancelled).contains(&id) {
+                            return;
+                        }
+                        if let Err(error) = run_job(
+                            id,
+                            &ytdlp,
+                            &url,
+                            &options,
+                            &running,
+                            &cancelled,
+                            &events_job,
+                            &wake_job,
+                            &alive,
+                        ) {
+                            log::error!("no pude atender el trabajo {id}: {error}");
                         }
                     });
 
@@ -1049,9 +1038,7 @@ mod tests {
             let maximo = Arc::clone(&maximo);
             let soltados = Arc::clone(&soltados);
             hilos.push(std::thread::spawn(move || {
-                let cupo = cupos
-                    .tomar(Duration::from_secs(10))
-                    .expect("deberia haber lugar");
+                let cupo = cupos.tomar();
                 let ahora = dentro.fetch_add(1, Ordering::SeqCst) + 1;
                 maximo.fetch_max(ahora, Ordering::SeqCst);
                 std::thread::sleep(Duration::from_millis(30));
@@ -1073,14 +1060,33 @@ mod tests {
         assert_eq!(*lock(&cupos.libres), CUPO, "los cupos no volvieron todos");
     }
 
-    /// Sin lugar en el tiempo pedido, se rinde en vez de esperar para siempre.
+    /// Si el unico lugar esta ocupado, el que llega despues espera hasta que
+    /// se libere: no se rinde a los pocos milisegundos.
     #[test]
-    fn el_cupo_se_rinde_si_espera_demasiado() {
-        let cupos = Cupos::new(1);
-        let _guardado = cupos.tomar(Duration::from_millis(50)).expect("el primero");
-        assert!(cupos.tomar(Duration::from_millis(50)).is_none());
-        drop(_guardado);
-        assert!(cupos.tomar(Duration::from_millis(50)).is_some());
+    fn el_cupo_espera_hasta_que_haya_lugar() {
+        let cupos = Arc::new(Cupos::new(1));
+        let ocupado = cupos.tomar();
+        let listo = Arc::new(AtomicBool::new(false));
+        let cupos_espera = Arc::clone(&cupos);
+        let listo_espera = Arc::clone(&listo);
+
+        let hilo = std::thread::spawn(move || {
+            let _cupo = cupos_espera.tomar();
+            listo_espera.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(
+            !listo.load(Ordering::SeqCst),
+            "no deberia haber tomado el cupo mientras sigue ocupado"
+        );
+        drop(ocupado);
+        hilo.join().expect("el que espera deberia terminar");
+        assert!(
+            listo.load(Ordering::SeqCst),
+            "al soltar el cupo, el que espera tiene que tomarlo"
+        );
+        assert_eq!(*lock(&cupos.libres), 1, "el cupo no volvio");
     }
 
     /// El postprocesado se detecta por el aviso estructurado de yt-dlp.
