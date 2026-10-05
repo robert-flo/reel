@@ -22,7 +22,7 @@ features:
     link_text: "Ver guía"
   - icon: ☰
     title: La cola
-    details: "Hasta tres a la vez, con progreso, cancelar, reintentar y volver a bajar."
+    details: "De a uno, con pausa entre videos, progreso, cancelar, reintentar y volver a bajar."
     link: /cola/
     link_text: "Ver guía"
   - icon: ⚙

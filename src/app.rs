@@ -87,6 +87,8 @@ pub struct App {
     pub settings_open: bool,
     /// Algo de `settings` cambio y hay que escribirlo a disco.
     settings_dirty: bool,
+    /// La cola cambio y hay que escribirla a disco.
+    queue_dirty: bool,
     pub preview: Option<Media>,
     /// El enlace al que corresponde la ficha de arriba.
     pub preview_url: Option<String>,
@@ -197,6 +199,7 @@ impl App {
             draft_subtitles: settings.subtitle_list(),
             settings_open: false,
             settings_dirty: false,
+            queue_dirty: false,
             preview: None,
             preview_url: None,
             preview_error: None,
@@ -229,6 +232,11 @@ impl App {
 
         app.selected_theme = app.settings.theme.clone();
         app.sync_options_from_settings();
+        // Las pruebas no tocan el archivo real: si no, un queue.json del
+        // usuario ensuciaria ids y filas de tests que asumen cola vacia.
+        if !cfg!(test) {
+            app.restaurar_cola();
+        }
         app
     }
 
@@ -335,6 +343,55 @@ impl App {
                 log::warn!("no pude guardar los ajustes: {error}");
             }
         });
+    }
+
+    /// Reponer la cola del arranque anterior. Terminadas y con error quedan
+    /// como estaban; pendientes y a medias se mandan otra vez (yt-dlp retoma
+    /// el `.part` con `--continue`).
+    fn restaurar_cola(&mut self) {
+        let mut cargada = crate::backend::Queue::load();
+        let pedidos = cargada.preparar_reanudacion();
+        {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *queue = cargada;
+            self.queue_dirty = !queue.jobs.is_empty();
+        }
+        for pedido in pedidos {
+            if pedido.es_lista() {
+                self.backend.send(Command::Expandir {
+                    id: pedido.id,
+                    url: pedido.url,
+                });
+            } else {
+                self.backend.send(Command::Start {
+                    id: pedido.id,
+                    url: pedido.url,
+                    options: pedido.options,
+                });
+            }
+        }
+        self.queue_dirty = true;
+    }
+
+    fn persist_queue(&mut self) {
+        if cfg!(test) || !std::mem::replace(&mut self.queue_dirty, false) {
+            return;
+        }
+        let snapshot = {
+            let queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.snapshot()
+        };
+        if let Err(error) = snapshot.save() {
+            log::warn!("no pude guardar la cola: {error}");
+        }
     }
 
     /// Arranca el catalogo de temas: los archivos del usuario, las ocho
@@ -552,6 +609,7 @@ impl App {
     fn pump(&mut self, ctx: &egui::Context) {
         let (cambio, nuevos) = self.backend.drain();
         if cambio {
+            self.queue_dirty = true;
             self.sync_preview();
             ctx.request_repaint();
         }
@@ -608,6 +666,7 @@ impl App {
 
         self.pump_tray();
         self.save_settings();
+        self.persist_queue();
     }
 
     /// Avisa por el escritorio cuando la cola deja de tener trabajo. Se mira
@@ -787,6 +846,7 @@ impl App {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             queue.push_ready(trimmed.clone(), options.clone(), media)
         };
+        self.queue_dirty = true;
 
         self.backend.send(Command::Start {
             id,
@@ -877,6 +937,7 @@ impl App {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             queue.push_ready(url.clone(), options.clone(), media)
         };
+        self.queue_dirty = true;
 
         if es_lista {
             // Una lista no se baja como un trabajo: primero hay que saber que
@@ -918,6 +979,7 @@ impl App {
         let Some((url, options)) = pedido else {
             return false;
         };
+        self.queue_dirty = true;
         self.backend.send(Command::Start { id, url, options });
         true
     }
@@ -935,6 +997,7 @@ impl App {
             queue.retry_forzado(id)
         };
         if let Some((url, options)) = pedido {
+            self.queue_dirty = true;
             self.backend.send(Command::Start { id, url, options });
         }
     }
@@ -965,6 +1028,9 @@ impl App {
         };
 
         let cuantos = pedidos.len();
+        if cuantos > 0 {
+            self.queue_dirty = true;
+        }
         for (id, url, options) in pedidos {
             self.backend.send(Command::Start { id, url, options });
         }
@@ -973,22 +1039,34 @@ impl App {
 
     /// Quita un trabajo de la cola si no esta activo.
     pub fn remove_job(&mut self, id: u64) -> bool {
-        let mut queue = self
-            .backend
-            .queue
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        queue.remove(id)
+        let quitado = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.remove(id)
+        };
+        if quitado {
+            self.queue_dirty = true;
+        }
+        quitado
     }
 
     /// Quita todos los trabajos terminados (listo, cancelado o fallo) de la cola.
     pub fn clear_finished_jobs(&mut self) -> usize {
-        let mut queue = self
-            .backend
-            .queue
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        queue.clear_finished()
+        let quitados = {
+            let mut queue = self
+                .backend
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.clear_finished()
+        };
+        if quitados > 0 {
+            self.queue_dirty = true;
+        }
+        quitados
     }
 
     /// Cancela todas las descargas que se esten ejecutando o esperando en cola.

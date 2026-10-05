@@ -6,9 +6,9 @@ nav_order: 3
 
 # La cola
 
-La cola es la pantalla principal. Hasta tres descargas a la vez; lo que
-sobra espera. Cada fila tiene titulo, formato, estado, barra, y las
-acciones que correspondan.
+La cola es la pantalla principal. De a un video por vez, con una pausa
+entre uno y el siguiente; lo que sobra espera. Cada fila tiene titulo,
+formato, estado, barra, y las acciones que correspondan.
 
 ## Mientras baja
 
