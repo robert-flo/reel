@@ -25,6 +25,11 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **La cola baja hasta tres a la vez**, cada trabajo en su hilo, con tope
   (`MAX_CONCURRENTES`). Verificado con el yt-dlp de mentira: tres trabajos
   arrancan en el mismo milisegundo y el total es 2.9s contra 4.4s en serie.
+- **Esperar cupo no tiene límite de tiempo**: si hay más trabajos que lugares,
+  los que sobran se quedan en `en espera` hasta que se libere uno; no fallan
+  por haber esperado. Verificado encolando más trabajos que cupos con tres
+  ocupantes lentos: los que esperan terminan en `listo`, y cancelar uno en
+  espera lo deja `cancelado` sin pasarlo a error.
 - **El estado de la fila no miente**: nace en `en espera` y pasa a
   `descargando` recien cuando yt-dlp arranca. Antes se mandaba `descargando` al
   encolar y la segunda fila mentia con 0%.
@@ -306,9 +311,9 @@ Debajo del estado, cuando corresponde, la velocidad y el tiempo restante.
 
 ### Cuantos a la vez
 
-Como mucho `MAX_CONCURRENTES` (tres). Lo que sobra espera su lugar en vez de
-lanzar treinta yt-dlp y treinta ffmpeg contra la maquina. El tope esta en
-`src/backend/ytdlp.rs` si lo queres cambiar.
+Como mucho `MAX_CONCURRENTES` (tres). Lo que sobra espera su lugar, sin límite
+de tiempo, en vez de lanzar treinta yt-dlp y treinta ffmpeg contra la maquina.
+El tope esta en `src/backend/ytdlp.rs` si lo queres cambiar.
 
 ## Ajustes
 
