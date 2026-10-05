@@ -4,10 +4,13 @@
 //! El trabajo pesado es yt-dlp, igual que en yoinks: resolver metadatos con
 //! `-J`, descargar con `--newline` y leer el progreso linea por linea.
 
+pub mod persist;
 pub mod ytdlp;
 
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -127,7 +130,8 @@ pub fn format_by_id(id: &str) -> &'static Format {
 }
 
 /// Opciones que el usuario puede cambiar y que yoinks tiene fijas.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Options {
     pub format_id: String,
     pub chapters: bool,
@@ -200,7 +204,8 @@ pub fn format_download_section(start: &str, end: &str) -> Option<String> {
     Some(section)
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Media {
     pub title: String,
     pub uploader: String,
@@ -218,7 +223,7 @@ pub struct Media {
     pub filesize: Option<u64>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum State {
     /// Resolviendo metadatos.
     Probing,
@@ -239,7 +244,7 @@ pub enum State {
     Cancelled,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Job {
     pub id: u64,
     pub url: String,

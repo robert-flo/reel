@@ -146,6 +146,7 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
 - **Diseño responsivo de la tarjeta de descarga en ventanas pequeñas**: cuando la ventana se ejecuta en un tamaño compacto o en paneles divididos (como en escritorios en mosaico Hyprland/Omarchy), la tarjeta adapta su estructura dinámicamente; el botón `descargar` se ubica de forma natural debajo de los formatos y opciones adicionales, evitando cualquier superposición o descolocación sobre las pastillas de calidad.
 - **Visibilidad garantizada de la cola y cierre ágil de la ficha**: al hacer clic en `descargar`, la ficha de vista previa se descarta de inmediato para exponer el progreso de la descarga en la cola; la ficha incluye un botón `✕` de cierre directo y una acción `descartar`; y el área central adapta el desplazamiento si la tarjeta y la lista exceden la altura en ventanas pequeñas, garantizando que las descargas nunca queden ocultas fuera de la pantalla. Asimismo, la barra de estado inferior prioriza la ruta de guardado y previene colisiones de texto en anchos estrechos.
 - **Disposición no superpuesta de filas y cabecera de cola en ventanas estrechas**: cada fila de descarga estructura el título acotado al espacio disponible junto a su estado en la línea superior, formato y acciones en la segunda línea, y detalle/errores a ancho completo en la tercera línea; la cabecera distribuye filtros y acciones en dos líneas si el ancho es menor a 520 px, eliminando cualquier colisión o solapamiento visual entre botones y textos.
+- **La cola sobrevive al cierre**: cada cambio se escribe en `~/.local/state/reel/queue.json`. Al reabrir, las filas listas y con error vuelven como estaban (con error sigue ofreciendo reintentar); las pendientes y a medias se mandan solas y yt-dlp retoma el `.part` con `--continue`. Un archivo dañado no tumba la app: arranca con cola vacía y lo deja en el log. Verificado con pruebas de roundtrip y de JSON roto.
 
 ### Falta
 
@@ -423,6 +424,7 @@ lo pone en una ventana donde la cola es la pantalla principal.
 | Temas propios | `~/.config/reel/themes/` |
 | Estado de la ventana | `~/.local/share/reel/app.ron` |
 | Log y pánicos | `~/.local/state/reel/` |
+| Cola de descargas | `~/.local/state/reel/queue.json` |
 | Socket de instancia | `~/.local/state/reel/reel.sock` |
 | Lo bajado | `~/Videos` y `~/Music`, o lo que elijas |
 
@@ -530,6 +532,7 @@ src/
 ├── updates.rs         cuando revisar y como contarlo
 ├── backend/
 │   ├── mod.rs         la cola, los formatos, los eventos
+│   ├── persist.rs     la cola en disco
 │   └── ytdlp.rs       los hilos que hablan con yt-dlp
 └── ui/
     ├── top_bar.rs     nombre, version, ajustes
