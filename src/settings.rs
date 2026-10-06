@@ -81,6 +81,9 @@ impl Settings {
     /// uno ilegible se avisa y se arranca con los valores por defecto, porque
     /// quedarse sin abrir por un JSON roto seria peor.
     pub fn load() -> Self {
+        if cfg!(test) {
+            return Self::default();
+        }
         let path = dirs::settings_file();
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,

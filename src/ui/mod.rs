@@ -153,6 +153,28 @@ pub fn human_duration(seconds: f64) -> String {
     }
 }
 
+/// Memoria residente (RSS) del proceso actual en bytes.
+///
+/// En Linux lee `VmRSS` directamente desde `/proc/self/status`.
+pub fn current_memory_bytes() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let content = std::fs::read_to_string("/proc/self/status").ok()?;
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                let kb_str = rest.split_whitespace().next()?;
+                let kb: u64 = kb_str.parse().ok()?;
+                return Some(kb * 1024);
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +207,14 @@ mod tests {
         // Lo que antes se leia "60:00".
         assert_eq!(human_eta(3600), "1h 00");
         assert_eq!(human_eta(7500), "2h 05");
+    }
+
+    #[test]
+    fn memoria_en_linux() {
+        if cfg!(target_os = "linux") {
+            let mem = current_memory_bytes();
+            assert!(mem.is_some());
+            assert!(mem.unwrap() > 0);
+        }
     }
 }

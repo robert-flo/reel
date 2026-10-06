@@ -121,28 +121,40 @@ i18n_strings! {
 
     queue: { en: "QUEUE", es: "COLA" }
     filter_all: { en: "all", es: "todas" }
-    filter_active: { en: "active", es: "activas" }
-    filter_done: { en: "done", es: "listas" }
+    filter_active: { en: "in queue", es: "en cola" }
+    filter_done: { en: "done", es: "terminadas" }
+    filter_skipped: { en: "skipped", es: "omitidas" }
     filter_failed: { en: "failed", es: "con error" }
     search_hint: { en: "search...", es: "buscar..." }
     retry_failed: { en: "retry failed", es: "reintentar fallidas" }
     clear_finished: { en: "clear finished", es: "limpiar terminadas" }
     cancel_active: { en: "cancel active", es: "cancelar activas" }
-    active_one: { en: "active", es: "activa" }
-    active_many: { en: "active", es: "activas" }
+    active_one: { en: "in queue", es: "en cola" }
+    active_many: { en: "in queue", es: "en cola" }
     completed_one: { en: "completed", es: "completada" }
     completed_many: { en: "completed", es: "completadas" }
+    skipped_one: { en: "skipped", es: "omitida" }
+    skipped_many: { en: "skipped", es: "omitidas" }
     failed_one: { en: "failed", es: "fallida" }
     failed_many: { en: "failed", es: "fallidas" }
     no_match_prefix: { en: "no downloads match", es: "ninguna descarga coincide con" }
     no_active: { en: "no active downloads", es: "no hay descargas activas" }
     no_done: { en: "no finished downloads", es: "no hay descargas terminadas" }
+    no_skipped: { en: "no skipped downloads", es: "no hay descargas omitidas" }
     no_failed: { en: "no failed downloads", es: "no hay descargas con error" }
     clear_search: { en: "clear search", es: "limpiar búsqueda" }
     empty_title: { en: "the queue is empty", es: "la cola está vacía" }
     empty_hint: { en: "paste a link above and it shows up here", es: "pega un enlace arriba y aparece aquí" }
+    now_downloading: { en: "DOWNLOADING NOW", es: "DESCARGANDO AHORA" }
+    now_processing: { en: "PROCESSING", es: "PROCESANDO" }
+    now_retrying: { en: "RETRYING", es: "REINTENTANDO" }
+    waiting_turn: { en: "waiting turn...", es: "esperando turno..." }
+    memory_label: { en: "RAM", es: "RAM" }
+    memory_tooltip: { en: "Resident memory (RSS) used by reel", es: "Memoria residente (RSS) usada por reel" }
     status_probing: { en: "reading the link", es: "leyendo el enlace" }
     status_queued: { en: "queued", es: "en espera" }
+    status_skipped: { en: "skipped", es: "omitido" }
+    already_on_disk: { en: "already on disk", es: "ya existía en el disco" }
     status_downloading: { en: "downloading", es: "descargando" }
     status_waiting_ffmpeg: { en: "waiting for ffmpeg", es: "esperando ffmpeg" }
     status_done: { en: "done", es: "listo" }

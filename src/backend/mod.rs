@@ -266,6 +266,9 @@ pub struct Job {
     /// El paso de postprocesado en curso, si hay uno. Se recuerda aparte del
     /// estado para poder contarlo en la fila y no perderlo al cambiar.
     pub postprocessor: Option<String>,
+    /// El archivo ya existía en disco y se omitió la descarga.
+    #[serde(default)]
+    pub skipped: bool,
 }
 
 impl Job {
@@ -277,6 +280,13 @@ impl Job {
                 | State::Downloading
                 | State::Postprocessing { .. }
                 | State::Retrying { .. }
+        )
+    }
+
+    pub fn is_downloading(&self) -> bool {
+        matches!(
+            self.state,
+            State::Downloading | State::Postprocessing { .. } | State::Retrying { .. }
         )
     }
 }
@@ -334,6 +344,9 @@ pub enum Event {
     StateChanged {
         id: u64,
         state: State,
+    },
+    JobSkipped {
+        id: u64,
     },
 }
 
@@ -2012,6 +2025,7 @@ impl Queue {
             speed: None,
             eta_secs: None,
             postprocessor: None,
+            skipped: false,
         });
         id
     }
@@ -2135,6 +2149,7 @@ impl Queue {
         job.speed = None;
         job.eta_secs = None;
         job.postprocessor = None;
+        job.skipped = false;
         Some((job.url.clone(), job.options.clone()))
     }
 
@@ -2147,6 +2162,11 @@ impl Queue {
             .iter()
             .filter(|j| matches!(j.state, State::Done { .. }))
             .count()
+    }
+
+    #[allow(dead_code)]
+    pub fn skipped(&self) -> usize {
+        self.jobs.iter().filter(|j| j.skipped).count()
     }
 
     /// Encola un trabajo que ya tiene sus metadatos leidos: la ficha ya los
@@ -2198,6 +2218,11 @@ impl Queue {
                         job.postprocessor = Some(postprocessor.clone());
                     }
                     job.state = state;
+                }
+            }
+            Event::JobSkipped { id } => {
+                if let Some(job) = self.get_mut(id) {
+                    job.skipped = true;
                 }
             }
         }
