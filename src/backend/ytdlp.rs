@@ -924,6 +924,7 @@ where
     // Lo de stderr tambien se guarda, acotado, para poder contar por que fallo.
     let collected = Arc::new(Mutex::new(VecDeLineas::default()));
     let final_path: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let was_skipped = Arc::new(AtomicBool::new(false));
 
     let mut readers: Vec<JoinHandle<()>> = Vec::new();
     let tuberias: [(Option<Box<dyn Read + Send>>, bool); 2] = [
@@ -935,6 +936,7 @@ where
         let events = events.clone();
         let final_path = Arc::clone(&final_path);
         let collected = Arc::clone(&collected);
+        let was_skipped = Arc::clone(&was_skipped);
         let wake = Arc::clone(wake);
         readers.push(std::thread::spawn(move || {
             for line in BufReader::new(stream).lines().map_while(Result::ok) {
@@ -952,6 +954,11 @@ where
                     }
                     Salida::Terminado(path) => {
                         *lock(&final_path) = Some(path);
+                    }
+                    Salida::Omitido => {
+                        was_skipped.store(true, Ordering::SeqCst);
+                        let _ = events.send(Event::JobSkipped { id });
+                        wake();
                     }
                     Salida::Nada => {}
                 }
@@ -978,6 +985,11 @@ where
     // quien contarle nada.
     if lock(cancelled).contains(&id) || !alive.load(Ordering::SeqCst) {
         return Ok(None);
+    }
+
+    if was_skipped.load(Ordering::SeqCst) {
+        let _ = events.send(Event::JobSkipped { id });
+        wake();
     }
 
     let state = match status {
@@ -1011,11 +1023,21 @@ pub(crate) enum Salida {
     Postprocesado(String),
     /// La ruta final, cuando yt-dlp ya movio el archivo.
     Terminado(String),
+    /// El archivo ya existia en disco y yt-dlp omitio bajarlo de nuevo.
+    Omitido,
     /// Lo que no nos dice nada.
     Nada,
 }
 
 pub(crate) fn leer_linea(id: u64, line: &str) -> Salida {
+    let lower = line.to_lowercase();
+    if lower.contains("has already been downloaded")
+        || lower.contains("already been recorded")
+        || lower.contains("already present in")
+        || lower.contains("ya ha sido descargado")
+    {
+        return Salida::Omitido;
+    }
     if let Some(rest) = line.strip_prefix("PROGRESS|") {
         return match parse_progress(id, rest) {
             Some(event) => Salida::Progreso(event),
@@ -1347,6 +1369,17 @@ mod tests {
         assert!(matches!(
             leer_linea(3, "DONE|/tmp/video.mp4"),
             Salida::Terminado(ruta) if ruta == "/tmp/video.mp4"
+        ));
+        assert!(matches!(
+            leer_linea(3, "[download] /tmp/video.mp4 has already been downloaded"),
+            Salida::Omitido
+        ));
+        assert!(matches!(
+            leer_linea(
+                3,
+                "[download] video.mp4 has already been recorded in the archive"
+            ),
+            Salida::Omitido
         ));
         assert!(matches!(leer_linea(3, "cualquier cosa"), Salida::Nada));
         // Un progreso que no se puede leer tampoco inventa nada.

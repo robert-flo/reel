@@ -80,9 +80,17 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   pistas manuales disponibles en los idiomas elegidos.
 - **Atajos de teclado**: `Ctrl+,` (ajustes), `Ctrl+Q` (salir), `Ctrl+L` (enfocar enlace),
   `Escape` (cerrar ajustes o limpiar enlace/ficha) y `Ctrl+V` (pegar y buscar automáticamente).
-- **Filtros interactivos de cola**: cuando hay varios trabajos, la cabecera ofrece
-  filtros instantáneos (`todas`, `activas`, `listas`, `con error`), facilitando
-  seguir descargas en listas de decenas de elementos.
+- **Filtros interactivos y detección de omitidas**: cuando hay varios trabajos, la cabecera ofrece
+  filtros instantáneos (`todas`, `en cola`, `terminadas`, `omitidas`, `con error`).
+  Si un archivo ya existía en disco, yt-dlp lo omite (`--no-overwrites`) y Reel lo detecta
+  marcando la descarga como `omitido (ya existía en el disco)`, evitando descargas duplicadas
+  y separándolas en el filtro `omitidas`.
+- **Ficha destacada de descarga en curso**: cuando hay múltiples elementos en cola, la parte
+  superior muestra un banner fijo (`DESCARGANDO AHORA` o `EN ESPERA`) con el archivo exacto
+  que se está descargando en cada momento, su velocidad, tiempo restante y barra de progreso.
+- **Monitor de consumo de memoria en el encabezado**: para depuración e inspección visual, la barra
+  superior muestra el consumo de memoria RAM residente (`RSS`) en tiempo real (ej. `· 48.2 MB RAM`),
+  permitiendo verificar de forma transparente el uso de recursos del proceso.
 - **Cancelación sin carreras en cola**: los trabajos cancelados mientras esperan
   cupo de concurrencia se detienen limpiamente y nunca pisan su estado con `descargando`.
 - **Pruebas de interfaz automatizadas (headless)**: la UI se prueba de extremo a

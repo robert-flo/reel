@@ -28,6 +28,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             .count();
         (queue.jobs.clone(), queue.active(), queue.done(), failed)
     };
+    let skipped = jobs.iter().filter(|job| job.skipped).count();
+    let done_not_skipped = done.saturating_sub(skipped);
 
     // Trabajos inactivos y con error/cancelados para las acciones de cabecera.
     let inactive = jobs.iter().filter(|job| !job.is_active()).count();
@@ -97,10 +99,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
             filter_chip(ui, tr.filter_all, jobs.len(), QueueFilter::All);
             filter_chip(ui, tr.filter_active, active, QueueFilter::Active);
-            filter_chip(ui, tr.filter_done, done, QueueFilter::Done);
-            if failed > 0 {
-                filter_chip(ui, tr.filter_failed, failed, QueueFilter::Failed);
-            }
+            filter_chip(ui, tr.filter_done, done_not_skipped, QueueFilter::Done);
+            filter_chip(ui, tr.filter_skipped, skipped, QueueFilter::Skipped);
+            filter_chip(ui, tr.filter_failed, failed, QueueFilter::Failed);
         }
 
         if jobs.len() > 3 {
@@ -149,23 +150,25 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     if is_compact_header {
         ui.add_space(4.0);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            render_header_actions(
-                ui,
-                app,
-                &palette,
-                tr,
-                active,
-                done,
-                failed,
-                failed_or_cancelled,
-                inactive,
-                &jobs,
-                &mut cancelar_activas,
-                &mut reintentar_todo,
-                &mut limpiar_terminadas,
-                &mut actions,
-            );
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                render_header_actions(
+                    ui,
+                    app,
+                    &palette,
+                    tr,
+                    active,
+                    done,
+                    failed,
+                    failed_or_cancelled,
+                    inactive,
+                    &jobs,
+                    &mut cancelar_activas,
+                    &mut reintentar_todo,
+                    &mut limpiar_terminadas,
+                    &mut actions,
+                );
+            });
         });
     }
 
@@ -183,7 +186,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let matches_filter = match app.queue_filter {
                 QueueFilter::All => true,
                 QueueFilter::Active => job.is_active(),
-                QueueFilter::Done => matches!(job.state, State::Done { .. }),
+                QueueFilter::Done => matches!(job.state, State::Done { .. }) && !job.skipped,
+                QueueFilter::Skipped => job.skipped,
                 QueueFilter::Failed => matches!(job.state, State::Failed { .. }),
             };
             let matches_query = query.is_empty()
@@ -192,6 +196,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             matches_filter && matches_query
         })
         .collect();
+
+    // Si hay más de un trabajo en la cola y hay alguno en curso o en espera, lo mostramos fijado arriba
+    if jobs.len() > 1 {
+        let active_focus = jobs
+            .iter()
+            .find(|j| j.is_downloading())
+            .or_else(|| jobs.iter().find(|j| matches!(j.state, State::Queued)));
+        if let Some(active_job) = active_focus {
+            render_active_banner(ui, active_job, tr, &palette, &mut actions);
+            ui.add_space(8.0);
+        }
+    }
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
@@ -205,6 +221,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         match app.queue_filter {
                             QueueFilter::Active => tr.no_active.to_string(),
                             QueueFilter::Done => tr.no_done.to_string(),
+                            QueueFilter::Skipped => tr.no_skipped.to_string(),
                             QueueFilter::Failed => tr.no_failed.to_string(),
                             QueueFilter::All => tr.empty_title.to_string(),
                         }
@@ -347,10 +364,15 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
                 .unwrap_or_else(|| tr.pp_generic.to_string()),
         ),
         State::Done { path } => {
-            let detail = crate::i18n::parse_playlist_done(path)
-                .map(|n| tr.playlist_done(n))
-                .unwrap_or_else(|| path.clone());
-            (tr.status_done.to_string(), palette.done, detail)
+            if job.skipped {
+                let detail = format!("{} · {}", tr.already_on_disk, path);
+                (tr.status_skipped.to_string(), palette.dim, detail)
+            } else {
+                let detail = crate::i18n::parse_playlist_done(path)
+                    .map(|n| tr.playlist_done(n))
+                    .unwrap_or_else(|| path.clone());
+                (tr.status_done.to_string(), palette.done, detail)
+            }
         }
         State::Retrying {
             reason, wait_ms, ..
@@ -375,14 +397,27 @@ fn row(ui: &mut egui::Ui, app: &App, job: &crate::backend::Job, actions: &mut Ro
 
     let bar_color = match &job.state {
         State::Postprocessing { .. } | State::Retrying { .. } => palette.warning,
-        State::Done { .. } => palette.done,
+        State::Done { .. } => {
+            if job.skipped {
+                palette.dim
+            } else {
+                palette.done
+            }
+        }
         State::Failed { .. } => palette.danger,
         _ => palette.progress,
     };
 
+    let is_downloading = job.is_downloading();
+    let frame_stroke = if is_downloading {
+        Stroke::new(1.5, palette.accent)
+    } else {
+        Stroke::new(1.0, palette.outline)
+    };
+
     egui::Frame::new()
         .fill(palette.panel)
-        .stroke(Stroke::new(1.0, palette.outline))
+        .stroke(frame_stroke)
         .corner_radius(CornerRadius::same(Metrics::RADIUS))
         .inner_margin(egui::Margin::symmetric(18, 14))
         .show(ui, |ui| {
@@ -762,12 +797,105 @@ fn render_header_actions(
     }
 
     if jobs.len() <= 1 {
+        let skipped = jobs.iter().filter(|j| j.skipped).count();
+        let done_not_skipped = done.saturating_sub(skipped);
         let mut status_parts = Vec::new();
         status_parts.push(tr.counted(active, tr.active_one, tr.active_many));
-        status_parts.push(tr.counted(done, tr.completed_one, tr.completed_many));
+        status_parts.push(tr.counted(done_not_skipped, tr.completed_one, tr.completed_many));
+        if skipped > 0 {
+            status_parts.push(tr.counted(skipped, tr.skipped_one, tr.skipped_many));
+        }
         if failed > 0 {
             status_parts.push(tr.counted(failed, tr.failed_one, tr.failed_many));
         }
         ui.label(caption(status_parts.join("  ·  "), palette));
     }
+}
+
+fn render_active_banner(
+    ui: &mut egui::Ui,
+    job: &crate::backend::Job,
+    tr: &crate::i18n::Catalog,
+    palette: &crate::palette::Palette,
+    actions: &mut RowActions,
+) {
+    let (tag, tag_color) = match &job.state {
+        State::Downloading => (tr.now_downloading, palette.accent),
+        State::Postprocessing { .. } => (tr.now_processing, palette.warning),
+        State::Retrying { .. } => (tr.now_retrying, palette.warning),
+        State::Queued => (tr.status_queued, palette.dim),
+        _ => (tr.now_downloading, palette.accent),
+    };
+
+    let title = if job.media.title.is_empty() {
+        tr.untitled.to_string()
+    } else {
+        job.media.title.clone()
+    };
+
+    let mut speed_eta = Vec::new();
+    if let Some(speed) = job.speed {
+        speed_eta.push(human_speed(speed));
+    }
+    if let Some(eta) = job.eta_secs {
+        speed_eta.push(tr.remaining_eta(&human_eta(eta)));
+    }
+    let speed_eta_str = speed_eta.join(" · ");
+
+    egui::Frame::new()
+        .fill(palette.panel)
+        .stroke(Stroke::new(1.5, tag_color))
+        .corner_radius(CornerRadius::same(Metrics::RADIUS))
+        .inner_margin(egui::Margin::symmetric(18, 12))
+        .show(ui, |ui| {
+            // Fila 1: Tag a la izquierda ("● DESCARGANDO AHORA", etc.), Cancelar a la derecha
+            ui.horizontal(|ui| {
+                ui.label(text(format!("● {tag}"), 11.0, Weight::SemiBold, tag_color));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let hit = ui
+                        .add(
+                            egui::Label::new(text(tr.cancel, 11.0, Weight::Regular, palette.dim))
+                                .sense(egui::Sense::click()),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if hit.clicked() {
+                        actions.cancel = Some(job.id);
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+
+            // Fila 2: Título destacado
+            ui.horizontal(|ui| {
+                ui.add(egui::Label::new(text(&title, 13.0, Weight::Bold, palette.text)).truncate())
+                    .on_hover_text(&title);
+            });
+
+            // Fila 3: Formato + velocidad / tiempo restante / estado
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(caption(job_format_label(job, tr), palette));
+                if !speed_eta_str.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(caption(format!("· {speed_eta_str}"), palette));
+                } else if matches!(job.state, State::Queued) {
+                    ui.add_space(6.0);
+                    ui.label(caption(format!("· {}", tr.waiting_turn), palette));
+                }
+                if let State::Postprocessing { .. } = &job.state {
+                    let pp_name = job
+                        .postprocessor
+                        .as_deref()
+                        .map(|name| tr.postprocessor(name).to_string())
+                        .unwrap_or_else(|| tr.pp_generic.to_string());
+                    ui.add_space(6.0);
+                    ui.label(text(pp_name, 11.0, Weight::Regular, palette.warning));
+                }
+            });
+
+            // Fila 4: Barra de progreso destacada
+            ui.add_space(8.0);
+            progress_bar(ui, job.progress, tag_color, palette);
+        });
 }

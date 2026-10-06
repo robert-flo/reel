@@ -65,6 +65,7 @@ pub enum QueueFilter {
     All,
     Active,
     Done,
+    Skipped,
     Failed,
 }
 
@@ -134,6 +135,10 @@ pub struct App {
     pub tray: Option<fastframe_tray::Tray>,
     pub default_browser: String,
     pub inhibitor: SleepInhibitor,
+
+    /// Consumo de memoria (RSS) en bytes para depuración e inspección visual.
+    pub memory_rss: Option<u64>,
+    last_memory_check: Option<std::time::Instant>,
 
     // Lo que fastframe-shell necesita saber.
     hide_intent: bool,
@@ -225,6 +230,8 @@ impl App {
             tray,
             default_browser,
             inhibitor: SleepInhibitor::new(),
+            memory_rss: None,
+            last_memory_check: None,
             hide_intent: false,
             wants_show: false,
             quit_requested: false,
@@ -243,6 +250,20 @@ impl App {
     /// Los textos de la interfaz en el idioma elegido.
     pub fn tr(&self) -> &'static crate::i18n::Catalog {
         self.settings.language.catalog()
+    }
+
+    /// Consulta el uso de memoria RAM (RSS) del proceso, cacheando lecturas
+    /// para no leer `/proc` más de dos veces por segundo.
+    pub fn memory_rss(&mut self) -> Option<u64> {
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_memory_check {
+            if now.duration_since(last) < std::time::Duration::from_millis(500) {
+                return self.memory_rss;
+            }
+        }
+        self.last_memory_check = Some(now);
+        self.memory_rss = crate::ui::current_memory_bytes();
+        self.memory_rss
     }
 
     /// Cambiar el idioma se aplica en el frame siguiente: egui redibuja con
@@ -1601,8 +1622,15 @@ mod tests {
         });
         out.textures_delta.clear();
 
-        // Solo listas
+        // Solo terminadas
         app.queue_filter = QueueFilter::Done;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::queue::show(&mut app, ui);
+        });
+        out.textures_delta.clear();
+
+        // Solo omitidas
+        app.queue_filter = QueueFilter::Skipped;
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::ui::queue::show(&mut app, ui);
         });
@@ -1614,6 +1642,19 @@ mod tests {
             crate::ui::queue::show(&mut app, ui);
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn consulta_de_memoria_rss() {
+        let waker = fastframe_shell::Waker::default();
+        let mut app = App::new(&waker);
+        if cfg!(target_os = "linux") {
+            let mem1 = app.memory_rss();
+            assert!(mem1.is_some());
+            assert!(mem1.unwrap() > 0);
+            let mem2 = app.memory_rss();
+            assert_eq!(mem1, mem2);
+        }
     }
 
     #[test]

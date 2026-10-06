@@ -28,6 +28,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     palette.dim,
                 ));
 
+                if let Some(mem) = app.memory_rss() {
+                    ui.add_space(8.0);
+                    let mem_str = format!(
+                        "· {} {}",
+                        crate::ui::human_bytes(mem),
+                        app.tr().memory_label
+                    );
+                    ui.label(text(mem_str, 11.0, Weight::Regular, palette.dim))
+                        .on_hover_text(app.tr().memory_tooltip);
+                }
+
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if link(ui, app.tr().settings, app).clicked() {
                         app.open_settings();

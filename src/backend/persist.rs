@@ -167,6 +167,7 @@ mod tests {
             speed: Some(1024.0),
             eta_secs: Some(12),
             postprocessor: None,
+            skipped: false,
         }
     }
 
