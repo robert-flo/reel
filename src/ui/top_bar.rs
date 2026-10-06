@@ -35,8 +35,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         crate::ui::human_bytes(mem),
                         app.tr().memory_label
                     );
+                    let tooltip = format!("{}\n({} kB)", app.tr().memory_tooltip, mem / 1024);
                     ui.label(text(mem_str, 11.0, Weight::Regular, palette.dim))
-                        .on_hover_text(app.tr().memory_tooltip);
+                        .on_hover_text(tooltip);
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_secs(1));
                 }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
