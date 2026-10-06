@@ -89,7 +89,8 @@ Cada punto se comprobo de alguna forma concreta, no solo compilando.
   superior muestra un banner fijo (`DESCARGANDO AHORA` o `EN ESPERA`) con el archivo exacto
   que se está descargando en cada momento, su velocidad, tiempo restante y barra de progreso.
 - **Monitor de consumo de memoria en el encabezado**: para depuración e inspección visual, la barra
-  superior muestra el consumo de memoria RAM residente (`RSS`) en tiempo real (ej. `· 48.2 MB RAM`),
+  superior muestra el consumo de memoria RAM residente (`RSS`) en tiempo real (ej. `· 99.2 MB RAM`)
+  con refresco automático periódico cada 1 segundo y tooltip con el valor exacto en kilobytes,
   permitiendo verificar de forma transparente el uso de recursos del proceso.
 - **Cancelación sin carreras en cola**: los trabajos cancelados mientras esperan
   cupo de concurrencia se detienen limpiamente y nunca pisan su estado con `descargando`.
